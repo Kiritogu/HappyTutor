@@ -1,0 +1,16 @@
+{
+  "research_id": "research_20260206_102951_dd6819a7",
+  "topic": "大模型发展历程中的关键技术突破、代表性模型演进及其对人工智能产业的影响研究",
+  "optimized_topic": "大模型发展历程中的关键技术突破、代表性模型演进及其对人工智能产业的影响研究",
+  "statistics": {
+    "total_blocks": 5,
+    "pending": 0,
+    "researching": 0,
+    "completed": 5,
+    "failed": 0,
+    "total_tool_calls": 20
+  },
+  "report_word_count": 0,
+  "completed_at": "2026-02-06T10:39:22.536872",
+  "orchestrator": "langgraph"
+}

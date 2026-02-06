@@ -1,0 +1,38 @@
+# ============================================
+# DeepTutor Docker Compose - PostgreSQL Add-on
+# ============================================
+# Use with:
+#   docker compose -f docker-compose.yml -f docker-compose.postgres.yml up -d
+#
+# This file adds a PostgreSQL service and configures DeepTutor to use it for
+# structured user data (history / notebooks / chat sessions / UI settings).
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: deeptutor-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-deeptutor}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-deeptutor}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - deeptutor-network
+
+  deeptutor:
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - DEEPTUTOR_STORAGE_BACKEND=postgres
+      - DEEPTUTOR_POSTGRES_DSN=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-deeptutor}
+

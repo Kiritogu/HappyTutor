@@ -1,0 +1,16 @@
+{
+  "research_id": "research_20260206_094925_5681094f",
+  "topic": "大模型的发展历程",
+  "optimized_topic": "大模型的发展历程",
+  "statistics": {
+    "total_blocks": 5,
+    "pending": 0,
+    "researching": 0,
+    "completed": 5,
+    "failed": 0,
+    "total_tool_calls": 20
+  },
+  "report_word_count": 22069,
+  "completed_at": "2026-02-06T10:00:51.879148",
+  "orchestrator": "langgraph"
+}

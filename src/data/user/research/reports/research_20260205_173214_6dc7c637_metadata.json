@@ -1,0 +1,16 @@
+{
+  "research_id": "research_20260205_173214_6dc7c637",
+  "topic": "大模型发展历程：从早期神经网络到现代千亿参数架构的关键技术演进、代表性模型与产业影响分析",
+  "optimized_topic": "大模型发展历程：从早期神经网络到现代千亿参数架构的关键技术演进、代表性模型与产业影响分析",
+  "statistics": {
+    "total_blocks": 2,
+    "pending": 0,
+    "researching": 0,
+    "completed": 2,
+    "failed": 0,
+    "total_tool_calls": 4
+  },
+  "report_word_count": 7538,
+  "completed_at": "2026-02-05T17:35:05.826440",
+  "orchestrator": "langgraph"
+}
