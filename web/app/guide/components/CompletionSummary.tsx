@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle2 } from "lucide-react";
+import { CheckCircle2, RotateCcw } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -11,9 +11,10 @@ import { processLatexContent } from "@/lib/latex";
 
 interface CompletionSummaryProps {
   summary: string;
+  onReset: () => void;
 }
 
-export default function CompletionSummary({ summary }: CompletionSummaryProps) {
+export default function CompletionSummary({ summary, onReset }: CompletionSummaryProps) {
   const { t } = useTranslation();
   // Table components for ReactMarkdown
   const tableComponents = {
@@ -56,6 +57,13 @@ export default function CompletionSummary({ summary }: CompletionSummaryProps) {
           <CheckCircle2 className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
           {t("Learning Summary")}
         </h2>
+        <button
+          onClick={onReset}
+          className="px-3 py-1.5 text-sm font-medium text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 border border-indigo-200 dark:border-indigo-700 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors flex items-center gap-1.5"
+        >
+          <RotateCcw className="w-3.5 h-3.5" />
+          {t("New Learning")}
+        </button>
       </div>
       {/* Summary Content */}
       <div className="flex-1 overflow-y-auto p-8 bg-white dark:bg-slate-800">
