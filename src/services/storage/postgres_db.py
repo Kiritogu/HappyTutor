@@ -160,6 +160,56 @@ class PostgresUserDB:
                 updated_at DOUBLE PRECISION NOT NULL
             )
             """,
+            "CREATE EXTENSION IF NOT EXISTS citext",
+            """
+            CREATE TABLE IF NOT EXISTS users (
+                id UUID PRIMARY KEY,
+                email CITEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL,
+                is_email_verified BOOLEAN NOT NULL DEFAULT FALSE,
+                status TEXT NOT NULL DEFAULT 'active',
+                created_at DOUBLE PRECISION NOT NULL,
+                updated_at DOUBLE PRECISION NOT NULL,
+                last_login_at DOUBLE PRECISION
+            )
+            """,
+            "CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)",
+            """
+            CREATE TABLE IF NOT EXISTS refresh_tokens (
+                id UUID PRIMARY KEY,
+                user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                token_hash TEXT NOT NULL UNIQUE,
+                expires_at DOUBLE PRECISION NOT NULL,
+                revoked_at DOUBLE PRECISION,
+                created_at DOUBLE PRECISION NOT NULL,
+                created_ip TEXT,
+                user_agent TEXT
+            )
+            """,
+            "CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user_id ON refresh_tokens(user_id)",
+            "CREATE INDEX IF NOT EXISTS idx_refresh_tokens_expires_at ON refresh_tokens(expires_at)",
+            """
+            CREATE TABLE IF NOT EXISTS email_verification_tokens (
+                id UUID PRIMARY KEY,
+                user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                token_hash TEXT NOT NULL UNIQUE,
+                expires_at DOUBLE PRECISION NOT NULL,
+                used_at DOUBLE PRECISION,
+                created_at DOUBLE PRECISION NOT NULL
+            )
+            """,
+            "CREATE INDEX IF NOT EXISTS idx_email_verification_tokens_user_id ON email_verification_tokens(user_id)",
+            """
+            CREATE TABLE IF NOT EXISTS password_reset_tokens (
+                id UUID PRIMARY KEY,
+                user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                token_hash TEXT NOT NULL UNIQUE,
+                expires_at DOUBLE PRECISION NOT NULL,
+                used_at DOUBLE PRECISION,
+                created_at DOUBLE PRECISION NOT NULL
+            )
+            """,
+            "CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user_id ON password_reset_tokens(user_id)",
         ]
 
         with self._conn() as conn:
@@ -1072,3 +1122,320 @@ class PostgresUserDB:
                     "ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value, updated_at=EXCLUDED.updated_at",
                     (key, _safe_json_dumps(value), now),
                 )
+
+    # -------------------------------------------------------------------------
+    # Authentication
+    # -------------------------------------------------------------------------
+
+    def auth_create_user(self, *, email: str, password_hash: str) -> dict[str, Any]:
+        now = time.time()
+        user_id = str(uuid.uuid4())
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO users(id, email, password_hash, is_email_verified, status, created_at, updated_at) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                    (user_id, email, password_hash, False, "active", now, now),
+                )
+        return {
+            "id": user_id,
+            "email": email,
+            "password_hash": password_hash,
+            "is_email_verified": False,
+            "status": "active",
+            "created_at": now,
+            "updated_at": now,
+            "last_login_at": None,
+        }
+
+    def auth_get_user_by_email(self, email: str) -> dict[str, Any] | None:
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id, email, password_hash, is_email_verified, status, created_at, updated_at, last_login_at "
+                    "FROM users WHERE email = %s",
+                    (email,),
+                )
+                row = cur.fetchone()
+        if not row:
+            return None
+        return {
+            "id": str(row[0]),
+            "email": str(row[1]),
+            "password_hash": str(row[2]),
+            "is_email_verified": bool(row[3]),
+            "status": str(row[4]),
+            "created_at": float(row[5]),
+            "updated_at": float(row[6]),
+            "last_login_at": float(row[7]) if row[7] is not None else None,
+        }
+
+    def auth_get_user_by_id(self, user_id: str) -> dict[str, Any] | None:
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id, email, password_hash, is_email_verified, status, created_at, updated_at, last_login_at "
+                    "FROM users WHERE id = %s",
+                    (user_id,),
+                )
+                row = cur.fetchone()
+        if not row:
+            return None
+        return {
+            "id": str(row[0]),
+            "email": str(row[1]),
+            "password_hash": str(row[2]),
+            "is_email_verified": bool(row[3]),
+            "status": str(row[4]),
+            "created_at": float(row[5]),
+            "updated_at": float(row[6]),
+            "last_login_at": float(row[7]) if row[7] is not None else None,
+        }
+
+    def auth_update_password_hash(self, *, user_id: str, password_hash: str) -> bool:
+        now = time.time()
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE users SET password_hash = %s, updated_at = %s WHERE id = %s",
+                    (password_hash, now, user_id),
+                )
+                return cur.rowcount > 0
+
+    def auth_set_email_verified(self, *, user_id: str) -> bool:
+        now = time.time()
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE users SET is_email_verified = TRUE, updated_at = %s WHERE id = %s",
+                    (now, user_id),
+                )
+                return cur.rowcount > 0
+
+    def auth_update_last_login_at(self, *, user_id: str) -> bool:
+        now = time.time()
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE users SET last_login_at = %s, updated_at = %s WHERE id = %s",
+                    (now, now, user_id),
+                )
+                return cur.rowcount > 0
+
+    def auth_create_refresh_token(
+        self,
+        *,
+        user_id: str,
+        token_hash: str,
+        expires_at: float,
+        created_ip: str | None = None,
+        user_agent: str | None = None,
+    ) -> dict[str, Any]:
+        token_id = str(uuid.uuid4())
+        now = time.time()
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO refresh_tokens(id, user_id, token_hash, expires_at, revoked_at, created_at, created_ip, user_agent) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                    (token_id, user_id, token_hash, expires_at, None, now, created_ip, user_agent),
+                )
+        return {
+            "id": token_id,
+            "user_id": user_id,
+            "token_hash": token_hash,
+            "expires_at": expires_at,
+            "revoked_at": None,
+            "created_at": now,
+            "created_ip": created_ip,
+            "user_agent": user_agent,
+        }
+
+    def auth_get_refresh_token(self, token_id: str) -> dict[str, Any] | None:
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id, user_id, token_hash, expires_at, revoked_at, created_at, created_ip, user_agent "
+                    "FROM refresh_tokens WHERE id = %s",
+                    (token_id,),
+                )
+                row = cur.fetchone()
+        if not row:
+            return None
+        return {
+            "id": str(row[0]),
+            "user_id": str(row[1]),
+            "token_hash": str(row[2]),
+            "expires_at": float(row[3]),
+            "revoked_at": float(row[4]) if row[4] is not None else None,
+            "created_at": float(row[5]),
+            "created_ip": row[6],
+            "user_agent": row[7],
+        }
+
+    def auth_get_refresh_token_by_hash(self, token_hash: str) -> dict[str, Any] | None:
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id, user_id, token_hash, expires_at, revoked_at, created_at, created_ip, user_agent "
+                    "FROM refresh_tokens WHERE token_hash = %s",
+                    (token_hash,),
+                )
+                row = cur.fetchone()
+        if not row:
+            return None
+        return {
+            "id": str(row[0]),
+            "user_id": str(row[1]),
+            "token_hash": str(row[2]),
+            "expires_at": float(row[3]),
+            "revoked_at": float(row[4]) if row[4] is not None else None,
+            "created_at": float(row[5]),
+            "created_ip": row[6],
+            "user_agent": row[7],
+        }
+
+    def auth_is_refresh_token_active(self, token_id: str) -> bool:
+        now = time.time()
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT 1 FROM refresh_tokens WHERE id = %s AND revoked_at IS NULL AND expires_at > %s",
+                    (token_id, now),
+                )
+                row = cur.fetchone()
+                return row is not None
+
+    def auth_revoke_refresh_token(self, token_id: str) -> bool:
+        now = time.time()
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE refresh_tokens SET revoked_at = %s WHERE id = %s AND revoked_at IS NULL",
+                    (now, token_id),
+                )
+                return cur.rowcount > 0
+
+    def auth_revoke_all_refresh_tokens(self, *, user_id: str) -> int:
+        now = time.time()
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE refresh_tokens SET revoked_at = %s WHERE user_id = %s AND revoked_at IS NULL",
+                    (now, user_id),
+                )
+                return int(cur.rowcount)
+
+    def auth_create_email_verification_token(
+        self,
+        *,
+        user_id: str,
+        token_hash: str,
+        expires_at: float,
+    ) -> dict[str, Any]:
+        token_id = str(uuid.uuid4())
+        now = time.time()
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO email_verification_tokens(id, user_id, token_hash, expires_at, used_at, created_at) "
+                    "VALUES (%s, %s, %s, %s, %s, %s)",
+                    (token_id, user_id, token_hash, expires_at, None, now),
+                )
+        return {
+            "id": token_id,
+            "user_id": user_id,
+            "token_hash": token_hash,
+            "expires_at": expires_at,
+            "used_at": None,
+            "created_at": now,
+        }
+
+    def auth_consume_email_verification_token(self, *, token_hash: str) -> dict[str, Any] | None:
+        now = time.time()
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id, user_id, token_hash, expires_at, used_at, created_at "
+                    "FROM email_verification_tokens WHERE token_hash = %s",
+                    (token_hash,),
+                )
+                row = cur.fetchone()
+                if not row:
+                    return None
+
+                expires_at = float(row[3])
+                used_at = row[4]
+                if used_at is not None or expires_at <= now:
+                    return None
+
+                cur.execute(
+                    "UPDATE email_verification_tokens SET used_at = %s WHERE id = %s",
+                    (now, row[0]),
+                )
+
+        return {
+            "id": str(row[0]),
+            "user_id": str(row[1]),
+            "token_hash": str(row[2]),
+            "expires_at": float(row[3]),
+            "used_at": now,
+            "created_at": float(row[5]),
+        }
+
+    def auth_create_password_reset_token(
+        self,
+        *,
+        user_id: str,
+        token_hash: str,
+        expires_at: float,
+    ) -> dict[str, Any]:
+        token_id = str(uuid.uuid4())
+        now = time.time()
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO password_reset_tokens(id, user_id, token_hash, expires_at, used_at, created_at) "
+                    "VALUES (%s, %s, %s, %s, %s, %s)",
+                    (token_id, user_id, token_hash, expires_at, None, now),
+                )
+        return {
+            "id": token_id,
+            "user_id": user_id,
+            "token_hash": token_hash,
+            "expires_at": expires_at,
+            "used_at": None,
+            "created_at": now,
+        }
+
+    def auth_consume_password_reset_token(self, *, token_hash: str) -> dict[str, Any] | None:
+        now = time.time()
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id, user_id, token_hash, expires_at, used_at, created_at "
+                    "FROM password_reset_tokens WHERE token_hash = %s",
+                    (token_hash,),
+                )
+                row = cur.fetchone()
+                if not row:
+                    return None
+
+                expires_at = float(row[3])
+                used_at = row[4]
+                if used_at is not None or expires_at <= now:
+                    return None
+
+                cur.execute(
+                    "UPDATE password_reset_tokens SET used_at = %s WHERE id = %s",
+                    (now, row[0]),
+                )
+
+        return {
+            "id": str(row[0]),
+            "user_id": str(row[1]),
+            "token_hash": str(row[2]),
+            "expires_at": float(row[3]),
+            "used_at": now,
+            "created_at": float(row[5]),
+        }
