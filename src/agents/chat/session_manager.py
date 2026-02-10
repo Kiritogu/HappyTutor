@@ -100,6 +100,8 @@ class SessionManager:
 
     def create_session(
         self,
+        *,
+        user_id: str,
         title: str = "New Chat",
         settings: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
@@ -114,7 +116,7 @@ class SessionManager:
             New session dict with session_id
         """
         if self._db is not None:
-            return self._db.chat_create_session(title=title, settings=settings)
+            return self._db.chat_create_session(user_id=user_id, title=title, settings=settings)
 
         session_id = f"chat_{int(time.time() * 1000)}_{uuid.uuid4().hex[:8]}"
         now = time.time()
@@ -140,7 +142,7 @@ class SessionManager:
 
         return session
 
-    def get_session(self, session_id: str) -> dict[str, Any] | None:
+    def get_session(self, *, user_id: str, session_id: str) -> dict[str, Any] | None:
         """
         Get a session by ID.
 
@@ -151,7 +153,7 @@ class SessionManager:
             Session dict or None if not found
         """
         if self._db is not None:
-            return self._db.chat_get_session(session_id)
+            return self._db.chat_get_session(user_id=user_id, session_id=session_id)
 
         sessions = self._get_sessions()
         for session in sessions:
@@ -161,6 +163,8 @@ class SessionManager:
 
     def update_session(
         self,
+        *,
+        user_id: str,
         session_id: str,
         messages: list[dict[str, Any]] | None = None,
         title: str | None = None,
@@ -181,6 +185,7 @@ class SessionManager:
         if self._db is not None:
             return self._db.chat_update_session(
                 session_id,
+                user_id=user_id,
                 messages=messages,
                 title=title,
                 settings=settings,
@@ -210,6 +215,8 @@ class SessionManager:
 
     def add_message(
         self,
+        *,
+        user_id: str,
         session_id: str,
         role: str,
         content: str,
@@ -229,13 +236,14 @@ class SessionManager:
         """
         if self._db is not None:
             return self._db.chat_add_message(
+                user_id=user_id,
                 session_id=session_id,
                 role=role,
                 content=content,
                 sources=sources,
             )
 
-        session = self.get_session(session_id)
+        session = self.get_session(user_id=user_id, session_id=session_id)
         if not session:
             return None
 
@@ -253,12 +261,19 @@ class SessionManager:
         # Update title from first user message if still default
         if session.get("title") == "New Chat" and role == "user":
             new_title = content[:50] + ("..." if len(content) > 50 else "")
-            return self.update_session(session_id, messages=messages, title=new_title)
+            return self.update_session(
+                user_id=user_id,
+                session_id=session_id,
+                messages=messages,
+                title=new_title,
+            )
 
-        return self.update_session(session_id, messages=messages)
+        return self.update_session(user_id=user_id, session_id=session_id, messages=messages)
 
     def list_sessions(
         self,
+        *,
+        user_id: str,
         limit: int = 20,
         include_messages: bool = False,
     ) -> list[dict[str, Any]]:
@@ -273,7 +288,11 @@ class SessionManager:
             List of session dicts (newest first)
         """
         if self._db is not None:
-            return self._db.chat_list_sessions(limit=limit, include_messages=include_messages)
+            return self._db.chat_list_sessions(
+                user_id=user_id,
+                limit=limit,
+                include_messages=include_messages,
+            )
 
         sessions = self._get_sessions()[:limit]
 
@@ -299,7 +318,7 @@ class SessionManager:
 
         return sessions
 
-    def delete_session(self, session_id: str) -> bool:
+    def delete_session(self, *, user_id: str, session_id: str) -> bool:
         """
         Delete a session.
 
@@ -310,7 +329,7 @@ class SessionManager:
             True if deleted, False if not found
         """
         if self._db is not None:
-            return self._db.chat_delete_session(session_id)
+            return self._db.chat_delete_session(user_id=user_id, session_id=session_id)
 
         sessions = self._get_sessions()
         original_count = len(sessions)
@@ -323,7 +342,7 @@ class SessionManager:
 
         return False
 
-    def clear_all_sessions(self) -> int:
+    def clear_all_sessions(self, *, user_id: str) -> int:
         """
         Delete all sessions.
 
@@ -331,7 +350,7 @@ class SessionManager:
             Number of sessions deleted
         """
         if self._db is not None:
-            return self._db.chat_clear_all_sessions()
+            return self._db.chat_clear_all_sessions(user_id=user_id)
 
         sessions = self._get_sessions()
         count = len(sessions)

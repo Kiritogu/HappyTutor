@@ -138,7 +138,15 @@ class HistoryManager:
         with open(self.history_file, "w", encoding="utf-8") as f:
             json.dump(data_to_save, f, indent=2, ensure_ascii=False)
 
-    def add_entry(self, activity_type: ActivityType, title: str, content: dict, summary: str = ""):
+    def add_entry(
+        self,
+        *,
+        user_id: str,
+        activity_type: ActivityType,
+        title: str,
+        content: dict,
+        summary: str = "",
+    ):
         """
         Add a new history entry.
 
@@ -150,6 +158,7 @@ class HistoryManager:
         """
         if self._db is not None:
             return self._db.history_add_entry(
+                user_id=user_id,
                 activity_type=activity_type,
                 title=title,
                 content=content,
@@ -176,18 +185,18 @@ class HistoryManager:
         self._save_history(history)
         return entry
 
-    def get_recent(self, limit: int = 10, type_filter: str | None = None) -> list[dict]:
+    def get_recent(self, *, user_id: str, limit: int = 10, type_filter: str | None = None) -> list[dict]:
         if self._db is not None:
-            return self._db.history_get_recent(limit=limit, type_filter=type_filter)
+            return self._db.history_get_recent(user_id=user_id, limit=limit, type_filter=type_filter)
 
         history = self._load_history()
         if type_filter:
             history = [h for h in history if h["type"] == type_filter]
         return history[:limit]
 
-    def get_entry(self, entry_id: str) -> dict | None:
+    def get_entry(self, *, user_id: str, entry_id: str) -> dict | None:
         if self._db is not None:
-            return self._db.history_get_entry(entry_id)
+            return self._db.history_get_entry(user_id=user_id, entry_id=entry_id)
 
         history = self._load_history()
         for entry in history:

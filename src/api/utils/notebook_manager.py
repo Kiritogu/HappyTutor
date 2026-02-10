@@ -127,7 +127,13 @@ class NotebookManager:
     # === Notebook Operations ===
 
     def create_notebook(
-        self, name: str, description: str = "", color: str = "#3B82F6", icon: str = "book"
+        self,
+        *,
+        user_id: str,
+        name: str,
+        description: str = "",
+        color: str = "#3B82F6",
+        icon: str = "book",
     ) -> dict:
         """
         Create new notebook
@@ -143,6 +149,7 @@ class NotebookManager:
         """
         if self._db is not None:
             return self._db.notebook_create(
+                user_id=user_id,
                 name=name,
                 description=description,
                 color=color,
@@ -184,7 +191,7 @@ class NotebookManager:
 
         return notebook
 
-    def list_notebooks(self) -> list[dict]:
+    def list_notebooks(self, *, user_id: str) -> list[dict]:
         """
         List all notebooks (summary information)
 
@@ -192,7 +199,7 @@ class NotebookManager:
             Notebook list
         """
         if self._db is not None:
-            return self._db.notebook_list()
+            return self._db.notebook_list(user_id=user_id)
 
         index = self._load_index()
         notebooks = []
@@ -218,7 +225,7 @@ class NotebookManager:
         notebooks.sort(key=lambda x: x["updated_at"], reverse=True)
         return notebooks
 
-    def get_notebook(self, notebook_id: str) -> dict | None:
+    def get_notebook(self, *, user_id: str, notebook_id: str) -> dict | None:
         """
         Get notebook details (includes all records)
 
@@ -229,12 +236,14 @@ class NotebookManager:
             Notebook details
         """
         if self._db is not None:
-            return self._db.notebook_get(notebook_id)
+            return self._db.notebook_get(user_id=user_id, notebook_id=notebook_id)
 
         return self._load_notebook(notebook_id)
 
     def update_notebook(
         self,
+        *,
+        user_id: str,
         notebook_id: str,
         name: str | None = None,
         description: str | None = None,
@@ -257,6 +266,7 @@ class NotebookManager:
         if self._db is not None:
             return self._db.notebook_update(
                 notebook_id,
+                user_id=user_id,
                 name=name,
                 description=description,
                 color=color,
@@ -297,7 +307,7 @@ class NotebookManager:
 
         return notebook
 
-    def delete_notebook(self, notebook_id: str) -> bool:
+    def delete_notebook(self, *, user_id: str, notebook_id: str) -> bool:
         """
         Delete notebook
 
@@ -308,7 +318,7 @@ class NotebookManager:
             Whether deletion was successful
         """
         if self._db is not None:
-            return self._db.notebook_delete(notebook_id)
+            return self._db.notebook_delete(user_id=user_id, notebook_id=notebook_id)
 
         filepath = self._get_notebook_file(notebook_id)
         if not filepath.exists():
@@ -328,6 +338,8 @@ class NotebookManager:
 
     def add_record(
         self,
+        *,
+        user_id: str,
         notebook_ids: list[str],
         record_type: RecordType,
         title: str,
@@ -353,6 +365,7 @@ class NotebookManager:
         """
         if self._db is not None:
             return self._db.notebook_add_record(
+                user_id=user_id,
                 notebook_ids=notebook_ids,
                 record_type=record_type,
                 title=title,
@@ -396,7 +409,7 @@ class NotebookManager:
 
         return {"record": record, "added_to_notebooks": added_to}
 
-    def remove_record(self, notebook_id: str, record_id: str) -> bool:
+    def remove_record(self, *, user_id: str, notebook_id: str, record_id: str) -> bool:
         """
         Remove record from notebook
 
@@ -408,7 +421,11 @@ class NotebookManager:
             Whether deletion was successful
         """
         if self._db is not None:
-            return self._db.notebook_remove_record(notebook_id=notebook_id, record_id=record_id)
+            return self._db.notebook_remove_record(
+                user_id=user_id,
+                notebook_id=notebook_id,
+                record_id=record_id,
+            )
 
         notebook = self._load_notebook(notebook_id)
         if not notebook:
@@ -434,7 +451,7 @@ class NotebookManager:
 
         return True
 
-    def get_statistics(self) -> dict:
+    def get_statistics(self, *, user_id: str) -> dict:
         """
         Get notebook statistics
 
@@ -442,9 +459,9 @@ class NotebookManager:
             Statistics information
         """
         if self._db is not None:
-            return self._db.notebook_statistics()
+            return self._db.notebook_statistics(user_id=user_id)
 
-        notebooks = self.list_notebooks()
+        notebooks = self.list_notebooks(user_id=user_id)
 
         total_records = 0
         type_counts = {"solve": 0, "question": 0, "research": 0, "co_writer": 0}
