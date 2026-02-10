@@ -1228,10 +1228,11 @@ class PostgresUserDB:
         user_id: str,
         token_hash: str,
         expires_at: float,
+        token_id: str | None = None,
         created_ip: str | None = None,
         user_agent: str | None = None,
     ) -> dict[str, Any]:
-        token_id = str(uuid.uuid4())
+        token_id = token_id or str(uuid.uuid4())
         now = time.time()
         with self._conn() as conn:
             with conn.cursor() as cur:

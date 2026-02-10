@@ -31,6 +31,7 @@ class PostgresAuthRepository:
         user_id: str,
         token_hash: str,
         expires_at: float,
+        token_id: str | None = None,
         created_ip: str | None = None,
         user_agent: str | None = None,
     ) -> dict[str, Any]:
@@ -39,6 +40,8 @@ class PostgresAuthRepository:
             "token_hash": token_hash,
             "expires_at": expires_at,
         }
+        if token_id is not None:
+            payload["token_id"] = token_id
         if created_ip is not None:
             payload["created_ip"] = created_ip
         if user_agent is not None:
