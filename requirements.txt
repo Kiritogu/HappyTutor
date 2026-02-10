@@ -102,3 +102,6 @@ langfuse>=2.0.0
 # Database / Storage (Optional)
 # ============================================
 psycopg2-binary>=2.9.9
+passlib[argon2]>=1.7.4
+PyJWT>=2.8.0
+email-validator>=2.2.0
