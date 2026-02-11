@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import jwt
@@ -16,7 +16,7 @@ class TokenService:
         self._algorithm = "HS256"
 
     def _base_payload(self, *, user_id: str, token_type: str, ttl_seconds: int) -> dict[str, Any]:
-        now = datetime.now(UTC)
+        now = datetime.now(timezone.utc)
         exp = now + timedelta(seconds=ttl_seconds)
         return {
             "sub": user_id,

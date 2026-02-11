@@ -15,6 +15,7 @@ The graph implements a three-phase research pipeline:
 from __future__ import annotations
 
 from datetime import datetime
+import inspect
 import json
 from pathlib import Path
 from typing import Any
@@ -44,6 +45,37 @@ async def _ws_callback(config: RunnableConfig, update_type: str, data: dict[str,
 def _cleanup_registry(research_id: str) -> None:
     """Remove pipeline from registry after completion."""
     _pipeline_registry.pop(research_id, None)
+
+
+def _normalize_subtopic_payload(subtopic: Any, index: int) -> tuple[str, str]:
+    if isinstance(subtopic, dict):
+        title = str(
+            subtopic.get("sub_topic")
+            or subtopic.get("subtopic")
+            or subtopic.get("title")
+            or subtopic.get("topic")
+            or subtopic.get("name")
+            or ""
+        ).strip()
+        overview = str(
+            subtopic.get("overview")
+            or subtopic.get("description")
+            or subtopic.get("summary")
+            or ""
+        ).strip()
+        return title or f"Subtopic {index}", overview
+
+    if isinstance(subtopic, str):
+        title = subtopic.strip()
+        return title or f"Subtopic {index}", ""
+
+    return f"Subtopic {index}", ""
+
+
+async def _resolve_async_result(value: Any) -> Any:
+    if inspect.isawaitable(value):
+        return await value
+    return value
 
 
 # ---------------------------------------------------------------------------
@@ -137,10 +169,11 @@ async def initialize_queue(state: ResearchGraphState, config: RunnableConfig) ->
     _pipeline_registry[research_id] = {"queue": queue}
 
     pending_blocks = []
-    for subtopic in sub_topics:
+    for index, subtopic in enumerate(sub_topics, start=1):
+        sub_topic, overview = _normalize_subtopic_payload(subtopic, index)
         block = queue.add_block(
-            sub_topic=subtopic.get("sub_topic", subtopic.get("title", "")),
-            overview=subtopic.get("overview", subtopic.get("description", "")),
+            sub_topic=sub_topic,
+            overview=overview,
         )
         pending_blocks.append(block.block_id)
 
@@ -210,6 +243,7 @@ async def research_block(state: ResearchGraphState, config: RunnableConfig) -> d
     """Research a single topic block."""
     from src.agents.research.data_structures import DynamicTopicQueue, TopicStatus
     from src.agents.research.agents import ResearchAgent, NoteAgent
+    from src.agents.research.utils.citation_manager import CitationManager
     from src.tools.rag_tool import rag_search
     from src.tools.web_search import web_search
     from src.tools.query_item_tool import query_numbered_item
@@ -242,7 +276,13 @@ async def research_block(state: ResearchGraphState, config: RunnableConfig) -> d
     if registry["queue"] is None:
         registry["queue"] = DynamicTopicQueue(research_id=research_id)
 
+    if registry.get("citation_manager") is None:
+        root_dir = Path(__file__).parent.parent.parent.parent
+        cache_dir = root_dir / "data" / "user" / "research" / "cache" / research_id
+        registry["citation_manager"] = CitationManager(research_id=research_id, cache_dir=cache_dir)
+
     queue = registry["queue"]
+    citation_manager = registry.get("citation_manager")
 
     # Get block from queue
     block = None
@@ -278,17 +318,21 @@ async def research_block(state: ResearchGraphState, config: RunnableConfig) -> d
                     return json.dumps(result, ensure_ascii=False, default=str)
 
                 elif tool_type == "web_search":
-                    result = web_search(query=query, verbose=False)
+                    result = await _resolve_async_result(web_search(query=query, verbose=False))
                     return json.dumps(result, ensure_ascii=False, default=str)
 
                 elif tool_type == "query_item":
-                    result = query_numbered_item(identifier=query, kb_name=kb_name)
+                    result = await _resolve_async_result(
+                        query_numbered_item(identifier=query, kb_name=kb_name)
+                    )
                     return json.dumps(result, ensure_ascii=False, default=str)
 
                 elif tool_type == "paper_search":
                     paper_tool = PaperSearchTool()
                     years_limit = research_config.get("paper_search_years_limit", 3)
-                    papers = paper_tool.search_papers(query=query, max_results=3, years_limit=years_limit)
+                    papers = await _resolve_async_result(
+                        paper_tool.search_papers(query=query, max_results=3, years_limit=years_limit)
+                    )
                     return json.dumps({"papers": papers}, ensure_ascii=False, default=str)
 
                 elif tool_type == "run_code":
@@ -372,12 +416,22 @@ async def research_block(state: ResearchGraphState, config: RunnableConfig) -> d
                 "block_id": block_id,
             })
 
+            citation_id = f"CIT-{block_id.split('_')[1]}-{iteration + 1:02d}"
+
             trace = await note_agent.process(
                 tool_type=tool_type,
                 query=query,
                 raw_answer=raw_answer,
-                citation_id=f"CIT-{block_id.split('_')[1]}-{iteration + 1:02d}",
+                citation_id=citation_id,
             )
+
+            if citation_manager is not None:
+                citation_manager.add_citation(
+                    citation_id=citation_id,
+                    tool_type=tool_type,
+                    tool_trace=trace,
+                    raw_answer=raw_answer,
+                )
 
             # Add to tool traces
             block.tool_traces.append(trace)
@@ -453,6 +507,7 @@ async def generate_report(state: ResearchGraphState, config: RunnableConfig) -> 
     # Get queue from registry
     registry = _pipeline_registry.get(research_id, {})
     queue = registry.get("queue")
+    citation_manager = registry.get("citation_manager")
 
     optimized_topic = state.get("optimized_topic", state.get("topic", ""))
 
@@ -467,6 +522,8 @@ async def generate_report(state: ResearchGraphState, config: RunnableConfig) -> 
             })
 
         agent = ReportingAgent(config=pipeline_config)
+        if citation_manager is not None:
+            agent.set_citation_manager(citation_manager)
 
         result = await agent.process(
             queue=queue,

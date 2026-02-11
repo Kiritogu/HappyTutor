@@ -10,8 +10,10 @@ import json
 from pathlib import Path
 from typing import List, Literal, Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
+
+from src.api.dependencies.auth import get_current_user_from_header
 
 router = APIRouter()
 
@@ -63,7 +65,7 @@ class SidebarNavOrderUpdate(BaseModel):
     nav_order: SidebarNavOrder
 
 
-def load_ui_settings() -> dict:
+def load_ui_settings(*, user_id: str) -> dict:
     """Load UI-specific settings from json file"""
     # Prefer DB backend when enabled
     try:
@@ -76,7 +78,7 @@ def load_ui_settings() -> dict:
 
     if db is not None:
         try:
-            saved = db.ui_get(key="interface") or {}
+            saved = db.ui_get(user_id=user_id, key="interface") or {}
             return {**DEFAULT_UI_SETTINGS, **saved}
         except Exception:
             return DEFAULT_UI_SETTINGS.copy()
@@ -91,7 +93,7 @@ def load_ui_settings() -> dict:
     return DEFAULT_UI_SETTINGS.copy()
 
 
-def save_ui_settings(settings: dict):
+def save_ui_settings(*, user_id: str, settings: dict):
     """Save UI settings"""
     # Prefer DB backend when enabled
     try:
@@ -103,7 +105,7 @@ def save_ui_settings(settings: dict):
         db = None
 
     if db is not None:
-        db.ui_set(key="interface", value=settings)
+        db.ui_set(user_id=user_id, key="interface", value=settings)
         return
 
     SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -112,43 +114,52 @@ def save_ui_settings(settings: dict):
 
 
 @router.get("")
-async def get_settings():
+async def get_settings(current_user: dict = Depends(get_current_user_from_header)):
     """Get UI settings."""
-    return {"ui": load_ui_settings()}
+    return {"ui": load_ui_settings(user_id=current_user["id"])}
 
 
 @router.put("/theme")
-async def update_theme(update: ThemeUpdate):
+async def update_theme(
+    update: ThemeUpdate,
+    current_user: dict = Depends(get_current_user_from_header),
+):
     """Update UI theme"""
-    current_ui = load_ui_settings()
+    current_ui = load_ui_settings(user_id=current_user["id"])
     current_ui["theme"] = update.theme
-    save_ui_settings(current_ui)
+    save_ui_settings(user_id=current_user["id"], settings=current_ui)
     return {"theme": update.theme}
 
 
 @router.put("/language")
-async def update_language(update: LanguageUpdate):
+async def update_language(
+    update: LanguageUpdate,
+    current_user: dict = Depends(get_current_user_from_header),
+):
     """Update UI language"""
-    current_ui = load_ui_settings()
+    current_ui = load_ui_settings(user_id=current_user["id"])
     current_ui["language"] = update.language
-    save_ui_settings(current_ui)
+    save_ui_settings(user_id=current_user["id"], settings=current_ui)
     return {"language": update.language}
 
 
 @router.put("/ui")
-async def update_ui_settings(update: UISettings):
+async def update_ui_settings(
+    update: UISettings,
+    current_user: dict = Depends(get_current_user_from_header),
+):
     """Update all UI settings"""
-    current_ui = load_ui_settings()
+    current_ui = load_ui_settings(user_id=current_user["id"])
     update_dict = update.model_dump(exclude_none=True)
     current_ui.update(update_dict)
-    save_ui_settings(current_ui)
+    save_ui_settings(user_id=current_user["id"], settings=current_ui)
     return current_ui
 
 
 @router.post("/reset")
-async def reset_settings():
+async def reset_settings(current_user: dict = Depends(get_current_user_from_header)):
     """Reset UI settings to default"""
-    save_ui_settings(DEFAULT_UI_SETTINGS)
+    save_ui_settings(user_id=current_user["id"], settings=DEFAULT_UI_SETTINGS)
     return DEFAULT_UI_SETTINGS
 
 
@@ -164,9 +175,9 @@ async def get_themes():
 
 
 @router.get("/sidebar")
-async def get_sidebar_settings():
+async def get_sidebar_settings(current_user: dict = Depends(get_current_user_from_header)):
     """Get sidebar customization settings"""
-    current_ui = load_ui_settings()
+    current_ui = load_ui_settings(user_id=current_user["id"])
     return {
         "description": current_ui.get(
             "sidebar_description", DEFAULT_UI_SETTINGS["sidebar_description"]
@@ -176,18 +187,24 @@ async def get_sidebar_settings():
 
 
 @router.put("/sidebar/description")
-async def update_sidebar_description(update: SidebarDescriptionUpdate):
+async def update_sidebar_description(
+    update: SidebarDescriptionUpdate,
+    current_user: dict = Depends(get_current_user_from_header),
+):
     """Update sidebar description"""
-    current_ui = load_ui_settings()
+    current_ui = load_ui_settings(user_id=current_user["id"])
     current_ui["sidebar_description"] = update.description
-    save_ui_settings(current_ui)
+    save_ui_settings(user_id=current_user["id"], settings=current_ui)
     return {"description": update.description}
 
 
 @router.put("/sidebar/nav-order")
-async def update_sidebar_nav_order(update: SidebarNavOrderUpdate):
+async def update_sidebar_nav_order(
+    update: SidebarNavOrderUpdate,
+    current_user: dict = Depends(get_current_user_from_header),
+):
     """Update sidebar navigation order"""
-    current_ui = load_ui_settings()
+    current_ui = load_ui_settings(user_id=current_user["id"])
     current_ui["sidebar_nav_order"] = update.nav_order.model_dump()
-    save_ui_settings(current_ui)
+    save_ui_settings(user_id=current_user["id"], settings=current_ui)
     return {"nav_order": update.nav_order.model_dump()}

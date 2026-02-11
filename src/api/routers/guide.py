@@ -8,7 +8,7 @@ Provides session creation, learning progress management, and chat interaction.
 from pathlib import Path
 import sys
 
-from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
 project_root = Path(__file__).parent.parent.parent.parent
@@ -16,6 +16,10 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from src.agents.base_agent import BaseAgent
+from src.api.dependencies.auth import (
+    get_current_user_from_authorization,
+    get_current_user_from_header,
+)
 from src.api.utils.notebook_manager import notebook_manager
 from src.api.utils.task_id_manager import TaskIDManager
 from src.logging import get_logger
@@ -35,6 +39,18 @@ project_root = Path(__file__).parent.parent.parent.parent
 config = load_config_with_main("guide_config.yaml", project_root)
 log_dir = config.get("paths", {}).get("user_log_dir") or config.get("logging", {}).get("log_dir")
 logger = get_logger("Guide", level="INFO", log_dir=log_dir)
+
+
+def _get_websocket_authorization(websocket: WebSocket) -> str | None:
+    authorization = websocket.headers.get("authorization")
+    if authorization:
+        return authorization
+
+    query_token = websocket.query_params.get("token")
+    if query_token:
+        return f"Bearer {query_token}"
+
+    return None
 
 
 # === Request/Response Models ===
@@ -71,7 +87,10 @@ class NextKnowledgeRequest(BaseModel):
 
 
 @router.post("/create_session")
-async def create_session(request: CreateSessionRequest):
+async def create_session(
+    request: CreateSessionRequest,
+    current_user: dict = Depends(get_current_user_from_header),
+):
     """
     Create a new guided learning session.
 
@@ -90,7 +109,10 @@ async def create_session(request: CreateSessionRequest):
             notebook_name = f"Cross-notebook ({len(records)} records)"
         # Mode 2: Single notebook mode - get records from notebook
         elif request.notebook_id:
-            notebook = notebook_manager.get_notebook(request.notebook_id)
+            notebook = notebook_manager.get_notebook(
+                user_id=current_user["id"],
+                notebook_id=request.notebook_id,
+            )
             if not notebook:
                 raise HTTPException(status_code=404, detail="Notebook not found")
 
@@ -105,10 +127,14 @@ async def create_session(request: CreateSessionRequest):
         # Reset LLM stats for new session
         BaseAgent.reset_stats("guide")
 
-        ui_language = get_ui_language(default=config.get("system", {}).get("language", "en"))
+        ui_language = get_ui_language(
+            user_id=current_user["id"],
+            default=config.get("system", {}).get("language", "en"),
+        )
 
         # Use LangGraph for session creation
         result = await _create_session_langgraph(
+            user_id=current_user["id"],
             notebook_id=request.notebook_id or "cross_notebook",
             notebook_name=notebook_name,
             records=records,
@@ -130,14 +156,21 @@ async def create_session(request: CreateSessionRequest):
 
 
 @router.post("/start")
-async def start_learning(request: NextKnowledgeRequest):
+async def start_learning(
+    request: NextKnowledgeRequest,
+    current_user: dict = Depends(get_current_user_from_header),
+):
     """
     Start learning (get the first knowledge point).
     """
     try:
-        ui_language = get_ui_language(default=config.get("system", {}).get("language", "en"))
+        ui_language = get_ui_language(
+            user_id=current_user["id"],
+            default=config.get("system", {}).get("language", "en"),
+        )
 
         result = await _run_interaction_langgraph(
+            user_id=current_user["id"],
             session_id=request.session_id,
             action="start",
             language=ui_language,
@@ -149,14 +182,21 @@ async def start_learning(request: NextKnowledgeRequest):
 
 
 @router.post("/next")
-async def next_knowledge(request: NextKnowledgeRequest):
+async def next_knowledge(
+    request: NextKnowledgeRequest,
+    current_user: dict = Depends(get_current_user_from_header),
+):
     """
     Move to the next knowledge point.
     """
     try:
-        ui_language = get_ui_language(default=config.get("system", {}).get("language", "en"))
+        ui_language = get_ui_language(
+            user_id=current_user["id"],
+            default=config.get("system", {}).get("language", "en"),
+        )
 
         result = await _run_interaction_langgraph(
+            user_id=current_user["id"],
             session_id=request.session_id,
             action="next",
             language=ui_language,
@@ -173,14 +213,21 @@ async def next_knowledge(request: NextKnowledgeRequest):
 
 
 @router.post("/chat")
-async def chat(request: ChatRequest):
+async def chat(
+    request: ChatRequest,
+    current_user: dict = Depends(get_current_user_from_header),
+):
     """
     Send a chat message.
     """
     try:
-        ui_language = get_ui_language(default=config.get("system", {}).get("language", "en"))
+        ui_language = get_ui_language(
+            user_id=current_user["id"],
+            default=config.get("system", {}).get("language", "en"),
+        )
 
         result = await _run_interaction_langgraph(
+            user_id=current_user["id"],
             session_id=request.session_id,
             action="chat",
             language=ui_language,
@@ -193,14 +240,21 @@ async def chat(request: ChatRequest):
 
 
 @router.post("/fix_html")
-async def fix_html(request: FixHtmlRequest):
+async def fix_html(
+    request: FixHtmlRequest,
+    current_user: dict = Depends(get_current_user_from_header),
+):
     """
     Fix HTML page bugs.
     """
     try:
-        ui_language = get_ui_language(default=config.get("system", {}).get("language", "en"))
+        ui_language = get_ui_language(
+            user_id=current_user["id"],
+            default=config.get("system", {}).get("language", "en"),
+        )
 
         result = await _run_interaction_langgraph(
+            user_id=current_user["id"],
             session_id=request.session_id,
             action="fix_html",
             language=ui_language,
@@ -213,13 +267,16 @@ async def fix_html(request: FixHtmlRequest):
 
 
 @router.get("/session/{session_id}")
-async def get_session(session_id: str):
+async def get_session(
+    session_id: str,
+    current_user: dict = Depends(get_current_user_from_header),
+):
     """
     Get session information.
     """
     try:
         session = _langgraph_sessions.get(session_id)
-        if not session:
+        if not session or session.get("user_id") != current_user["id"]:
             raise HTTPException(status_code=404, detail="Session not found")
         return session
     except HTTPException:
@@ -230,13 +287,16 @@ async def get_session(session_id: str):
 
 
 @router.get("/session/{session_id}/html")
-async def get_current_html(session_id: str):
+async def get_current_html(
+    session_id: str,
+    current_user: dict = Depends(get_current_user_from_header),
+):
     """
     Get the current HTML page.
     """
     try:
         session = _langgraph_sessions.get(session_id)
-        if not session:
+        if not session or session.get("user_id") != current_user["id"]:
             raise HTTPException(status_code=404, detail="Session not found")
         html = session.get("current_html")
         if html is None:
@@ -264,6 +324,15 @@ async def websocket_guide(websocket: WebSocket, session_id: str):
     - fix_html: Fix HTML
     - get_session: Get session state
     """
+    authorization = _get_websocket_authorization(websocket)
+    try:
+        current_user = get_current_user_from_authorization(authorization)
+    except HTTPException as exc:
+        await websocket.accept()
+        await websocket.send_json({"type": "error", "content": exc.detail})
+        await websocket.close(code=1008)
+        return
+
     await websocket.accept()
 
     task_manager = TaskIDManager.get_instance()
@@ -277,7 +346,7 @@ async def websocket_guide(websocket: WebSocket, session_id: str):
     try:
         # Get session from LangGraph session store
         session = _langgraph_sessions.get(session_id)
-        if not session:
+        if not session or session.get("user_id") != current_user["id"]:
             await websocket.send_json({
                 "type": "error",
                 "content": "Session not found or expired. Please create a new session.",
@@ -290,7 +359,10 @@ async def websocket_guide(websocket: WebSocket, session_id: str):
 
         await websocket.send_json({"type": "session_info", "data": session})
 
-        ui_language = get_ui_language(default=config.get("system", {}).get("language", "en"))
+        ui_language = get_ui_language(
+            user_id=current_user["id"],
+            default=config.get("system", {}).get("language", "en"),
+        )
 
         # Create WebSocket callback for real-time updates from LangGraph nodes
         async def ws_callback(data: dict):
@@ -307,6 +379,7 @@ async def websocket_guide(websocket: WebSocket, session_id: str):
                 if msg_type == "start":
                     logger.debug(f"[{task_id}] Start learning")
                     result = await _run_interaction_langgraph(
+                        user_id=current_user["id"],
                         session_id=session_id,
                         action="start",
                         language=ui_language,
@@ -317,6 +390,7 @@ async def websocket_guide(websocket: WebSocket, session_id: str):
                 elif msg_type == "next":
                     logger.debug(f"[{task_id}] Next knowledge point")
                     result = await _run_interaction_langgraph(
+                        user_id=current_user["id"],
                         session_id=session_id,
                         action="next",
                         language=ui_language,
@@ -333,6 +407,7 @@ async def websocket_guide(websocket: WebSocket, session_id: str):
                     if message:
                         logger.debug(f"[{task_id}] User message: {message[:50]}...")
                         result = await _run_interaction_langgraph(
+                            user_id=current_user["id"],
                             session_id=session_id,
                             action="chat",
                             language=ui_language,
@@ -345,6 +420,7 @@ async def websocket_guide(websocket: WebSocket, session_id: str):
                     bug_desc = data.get("bug_description", "")
                     logger.debug(f"[{task_id}] Fix HTML: {bug_desc[:50]}...")
                     result = await _run_interaction_langgraph(
+                        user_id=current_user["id"],
                         session_id=session_id,
                         action="fix_html",
                         language=ui_language,
@@ -355,7 +431,10 @@ async def websocket_guide(websocket: WebSocket, session_id: str):
 
                 elif msg_type == "get_session":
                     session = _langgraph_sessions.get(session_id)
-                    await websocket.send_json({"type": "session_info", "data": session})
+                    if session and session.get("user_id") == current_user["id"]:
+                        await websocket.send_json({"type": "session_info", "data": session})
+                    else:
+                        await websocket.send_json({"type": "error", "content": "Session not found"})
 
                 else:
                     await websocket.send_json(
@@ -392,6 +471,7 @@ _langgraph_sessions: dict[str, dict] = {}
 
 
 async def _create_session_langgraph(
+    user_id: str,
     notebook_id: str,
     notebook_name: str,
     records: list[dict],
@@ -420,6 +500,7 @@ async def _create_session_langgraph(
         # Store session state for later interactions
         _langgraph_sessions[session_id] = {
             "session_id": session_id,
+            "user_id": user_id,
             "notebook_id": notebook_id,
             "notebook_name": notebook_name,
             "knowledge_points": result.get("knowledge_points", []),
@@ -440,6 +521,7 @@ async def _create_session_langgraph(
 
 
 async def _run_interaction_langgraph(
+    user_id: str,
     session_id: str,
     action: str,
     language: str,
@@ -452,7 +534,7 @@ async def _run_interaction_langgraph(
 
     # Get session from memory store
     session = _langgraph_sessions.get(session_id)
-    if not session:
+    if not session or session.get("user_id") != user_id:
         # Session not found (possibly server restarted)
         # Return special error so frontend knows to reset
         return {
@@ -493,6 +575,7 @@ async def _run_interaction_langgraph(
     # Update session store with new state
     _langgraph_sessions[session_id] = {
         "session_id": session_id,
+        "user_id": user_id,
         "notebook_id": result.get("notebook_id", session.get("notebook_id")),
         "notebook_name": result.get("notebook_name", session.get("notebook_name")),
         "knowledge_points": result.get("knowledge_points", session.get("knowledge_points")),

@@ -8,15 +8,12 @@ import {
   User,
   Database,
   Globe,
-  Calculator,
   FileText,
   Microscope,
-  Lightbulb,
   Trash2,
   ExternalLink,
   BookOpen,
   Sparkles,
-  Edit3,
   GraduationCap,
   PenTool,
   Save,
@@ -138,13 +135,6 @@ export default function HomePage() {
 
   const quickActions = [
     {
-      icon: Calculator,
-      label: t("Smart Problem Solving"),
-      href: "/solver",
-      color: "blue",
-      description: t("Multi-agent reasoning"),
-    },
-    {
       icon: PenTool,
       label: t("Generate Practice Questions"),
       href: "/question",
@@ -159,25 +149,11 @@ export default function HomePage() {
       description: t("Comprehensive analysis"),
     },
     {
-      icon: Lightbulb,
-      label: t("Generate Novel Ideas"),
-      href: "/ideagen",
-      color: "amber",
-      description: t("Brainstorm & synthesize"),
-    },
-    {
       icon: GraduationCap,
       label: t("Guided Learning"),
       href: "/guide",
       color: "indigo",
       description: t("Step-by-step tutoring"),
-    },
-    {
-      icon: Edit3,
-      label: t("Co-Writer"),
-      href: "/co_writer",
-      color: "pink",
-      description: t("Collaborative writing"),
     },
   ];
 

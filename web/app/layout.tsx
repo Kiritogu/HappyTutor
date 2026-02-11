@@ -1,18 +1,11 @@
-import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+﻿import type { Metadata } from "next";
 import "./globals.css";
-import Sidebar from "@/components/Sidebar";
-import { GlobalProvider } from "@/context/GlobalContext";
 import ThemeScript from "@/components/ThemeScript";
 import LayoutWrapper from "@/components/LayoutWrapper";
+import AppShell from "@/components/AppShell";
+import { AuthProvider } from "@/context/AuthContext";
+import { GlobalProvider } from "@/context/GlobalContext";
 import { I18nClientBridge } from "@/i18n/I18nClientBridge";
-
-// Use Inter font with swap display for better loading
-const font = Inter({
-  subsets: ["latin"],
-  display: "swap",
-  fallback: ["system-ui", "sans-serif"],
-});
 
 export const metadata: Metadata = {
   title: "DeepTutor Platform",
@@ -29,19 +22,16 @@ export default function RootLayout({
       <head>
         <ThemeScript />
       </head>
-      <body className={font.className}>
-        <GlobalProvider>
-          <I18nClientBridge>
-            <LayoutWrapper>
-              <div className="flex h-screen overflow-hidden transition-colors duration-200 bg-transparent">
-                <Sidebar />
-                <main className="flex-1 overflow-y-auto bg-transparent">
-                  {children}
-                </main>
-              </div>
-            </LayoutWrapper>
-          </I18nClientBridge>
-        </GlobalProvider>
+      <body className="font-sans">
+        <AuthProvider>
+          <GlobalProvider>
+            <I18nClientBridge>
+              <LayoutWrapper>
+                <AppShell>{children}</AppShell>
+              </LayoutWrapper>
+            </I18nClientBridge>
+          </GlobalProvider>
+        </AuthProvider>
       </body>
     </html>
   );

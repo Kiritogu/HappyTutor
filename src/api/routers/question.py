@@ -6,8 +6,9 @@ import re
 import sys
 import traceback
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 
+from src.api.dependencies.auth import get_current_user_from_authorization
 from src.api.utils.history import ActivityType, history_manager
 from src.api.utils.task_id_manager import TaskIDManager
 from src.tools.question import mimic_exam_questions
@@ -36,6 +37,18 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 MIMIC_OUTPUT_DIR = PROJECT_ROOT / "data" / "user" / "question" / "mimic_papers"
 langfuse_handler = CallbackHandler()
 
+
+def _get_websocket_authorization(websocket: WebSocket) -> str | None:
+    authorization = websocket.headers.get("authorization")
+    if authorization:
+        return authorization
+
+    query_token = websocket.query_params.get("token")
+    if query_token:
+        return f"Bearer {query_token}"
+
+    return None
+
 @router.websocket("/mimic")
 async def websocket_mimic_generate(websocket: WebSocket):
     """
@@ -62,6 +75,15 @@ async def websocket_mimic_generate(websocket: WebSocket):
         "max_questions": 5  // optional
     }
     """
+    authorization = _get_websocket_authorization(websocket)
+    try:
+        get_current_user_from_authorization(authorization)
+    except HTTPException as exc:
+        await websocket.accept()
+        await websocket.send_json({"type": "error", "content": exc.detail})
+        await websocket.close(code=1008)
+        return
+
     await websocket.accept()
 
     pusher_task = None
@@ -327,6 +349,15 @@ async def websocket_mimic_generate(websocket: WebSocket):
 
 @router.websocket("/generate")
 async def websocket_question_generate(websocket: WebSocket):
+    authorization = _get_websocket_authorization(websocket)
+    try:
+        current_user = get_current_user_from_authorization(authorization)
+    except HTTPException as exc:
+        await websocket.accept()
+        await websocket.send_json({"type": "error", "content": exc.detail})
+        await websocket.close(code=1008)
+        return
+
     await websocket.accept()
 
     # Get task ID manager
@@ -361,7 +392,10 @@ async def websocket_question_generate(websocket: WebSocket):
             f"[{task_id}] Starting question generation: {requirement.get('knowledge_point', 'Unknown')}"
         )
 
-        language = get_ui_language(default=config.get("system", {}).get("language", "en"))
+        language = get_ui_language(
+            user_id=current_user["id"],
+            default=config.get("system", {}).get("language", "en"),
+        )
 
         # Define unified output directory (DeepTutor/data/user/question)
         root_dir = Path(__file__).parent.parent.parent.parent
@@ -407,6 +441,7 @@ async def websocket_question_generate(websocket: WebSocket):
                 output_dir=str(output_base),
                 task_id=task_id,
                 task_manager=task_manager,
+                user_id=current_user["id"],
             )
 
         except Exception as e:
@@ -451,6 +486,7 @@ async def _run_langgraph_generation(
     output_dir: str,
     task_id: str,
     task_manager: TaskIDManager,
+    user_id: str,
 ) -> None:
     """Run question generation using the LangGraph StateGraph."""
     from src.agents.question.graph import build_question_graph
@@ -491,6 +527,7 @@ async def _run_langgraph_generation(
         question = r.get("question", {})
         validation = r.get("validation", {})
         history_manager.add_entry(
+            user_id=user_id,
             activity_type=ActivityType.QUESTION,
             title=f"{requirement.get('knowledge_point', 'Question')} ({requirement.get('question_type')})",
             content={

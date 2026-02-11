@@ -72,9 +72,19 @@ def get_current_user(
         ) from exc
 
 
+def get_current_user_from_authorization(authorization: str | None) -> dict:
+    token = extract_bearer_token(authorization)
+    service = get_auth_service()
+    try:
+        return service.get_current_user(token)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(exc),
+        ) from exc
+
+
 def get_current_user_from_header(
     authorization: str | None = Header(default=None),
 ) -> dict:
-    service = get_auth_service()
-    return get_current_user(auth_service=service, authorization=authorization)
-
+    return get_current_user_from_authorization(authorization)

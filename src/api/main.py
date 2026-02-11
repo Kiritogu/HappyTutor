@@ -152,21 +152,16 @@ if __name__ == "__main__":
 
     backend_port = get_backend_port(project_root)
 
-    # Configure reload_excludes with absolute paths to properly exclude directories
-    venv_dir = project_root / "venv"
-    data_dir = project_root / "data"
+    # Configure reload_excludes with relative patterns for Windows compatibility.
     reload_excludes = [
-        str(d)
-        for d in [
-            venv_dir,
-            project_root / ".venv",
-            data_dir,
-            project_root / "web" / "node_modules",
-            project_root / "web" / ".next",
-            project_root / ".git",
-        ]
-        if d.exists()
+        "venv",
+        ".venv",
+        "data",
+        "web/node_modules",
+        "web/.next",
+        ".git",
     ]
+    reload_excludes = [d for d in reload_excludes if (project_root / d).exists()]
 
     uvicorn.run(
         "api.main:app",

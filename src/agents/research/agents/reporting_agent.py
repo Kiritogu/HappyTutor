@@ -59,6 +59,29 @@ class ReportingAgent(BaseAgent):
         converted = self._convert_to_template_format(template_str)
         return Template(converted).safe_substitute(**kwargs)
 
+    @staticmethod
+    def _extract_llm_text_field(response_text: str, field_name: str) -> tuple[str, bool]:
+        """
+        Extract target field from LLM response.
+
+        Preferred path: parse JSON and read `field_name`.
+        Fallback path: when JSON is unavailable, use raw response text directly.
+
+        Returns:
+            (content, used_fallback)
+        """
+        data = extract_json_from_text(response_text)
+        if isinstance(data, dict):
+            content = data.get(field_name, "")
+            if isinstance(content, str) and content.strip():
+                return content, False
+
+        fallback = (response_text or "").strip()
+        if fallback:
+            return fallback, True
+
+        raise ValueError(f"LLM returned empty or invalid {field_name} field")
+
     def __init__(self, config: dict[str, Any]):
         language = config.get("system", {}).get("language", "zh")
         super().__init__(
@@ -404,15 +427,12 @@ class ReportingAgent(BaseAgent):
         )
 
         resp = await self.call_llm(filled, system_prompt, stage="write_introduction", verbose=False)
-        data = extract_json_from_text(resp)
 
         try:
-            obj = ensure_json_dict(data)
-            ensure_keys(obj, ["introduction"])
-            intro = obj.get("introduction", "")
-            if isinstance(intro, str) and intro.strip():
-                return intro
-            raise ValueError("LLM returned empty or invalid introduction field")
+            intro, used_fallback = self._extract_llm_text_field(resp, "introduction")
+            if used_fallback:
+                print("  ⚠️ Introduction response is not strict JSON; using raw text fallback")
+            return intro
         except Exception as e:
             raise ValueError(
                 f"Unable to parse LLM returned introduction content: {e!s}. Report generation failed."
@@ -467,15 +487,12 @@ class ReportingAgent(BaseAgent):
         )
 
         resp = await self.call_llm(filled, system_prompt, stage="write_section_body", verbose=False)
-        data = extract_json_from_text(resp)
 
         try:
-            obj = ensure_json_dict(data)
-            ensure_keys(obj, ["section_content"])
-            content = obj.get("section_content", "")
-            if isinstance(content, str) and content.strip():
-                return content
-            raise ValueError("LLM returned empty or invalid section_content field")
+            content, used_fallback = self._extract_llm_text_field(resp, "section_content")
+            if used_fallback:
+                print("  ⚠️ Section response is not strict JSON; using raw text fallback")
+            return content
         except Exception as e:
             raise ValueError(
                 f"Unable to parse LLM returned section content: {e!s}. Report generation failed."
@@ -526,15 +543,12 @@ class ReportingAgent(BaseAgent):
         )
 
         resp = await self.call_llm(filled, system_prompt, stage="write_conclusion", verbose=False)
-        data = extract_json_from_text(resp)
 
         try:
-            obj = ensure_json_dict(data)
-            ensure_keys(obj, ["conclusion"])
-            conclusion = obj.get("conclusion", "")
-            if isinstance(conclusion, str) and conclusion.strip():
-                return conclusion
-            raise ValueError("LLM returned empty or invalid conclusion field")
+            conclusion, used_fallback = self._extract_llm_text_field(resp, "conclusion")
+            if used_fallback:
+                print("  ⚠️ Conclusion response is not strict JSON; using raw text fallback")
+            return conclusion
         except Exception as e:
             raise ValueError(
                 f"Unable to parse LLM returned conclusion content: {e!s}. Report generation failed."
@@ -1294,15 +1308,11 @@ class ReportingAgent(BaseAgent):
             stage="write_section_with_subsections",
             verbose=False,
         )
-        data = extract_json_from_text(resp)
-
         try:
-            obj = ensure_json_dict(data)
-            ensure_keys(obj, ["section_content"])
-            content = obj.get("section_content", "")
-            if isinstance(content, str) and content.strip():
-                return content
-            raise ValueError("LLM returned empty or invalid section_content field")
+            content, used_fallback = self._extract_llm_text_field(resp, "section_content")
+            if used_fallback:
+                print("  ⚠️ Section response is not strict JSON; using raw text fallback")
+            return content
         except Exception as e:
             raise ValueError(
                 f"Unable to parse LLM returned section content: {e!s}. Report generation failed."

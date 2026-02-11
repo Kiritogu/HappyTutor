@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import hashlib
 import uuid
 from typing import Any
@@ -60,7 +60,7 @@ class AuthService:
             token_id=refresh_token_id,
         )
 
-        refresh_exp = datetime.now(UTC) + timedelta(seconds=self.settings.jwt_refresh_ttl_seconds)
+        refresh_exp = datetime.now(timezone.utc) + timedelta(seconds=self.settings.jwt_refresh_ttl_seconds)
         self.repository.create_refresh_token(
             user_id=user["id"],
             token_hash=self._hash_token(refresh_token),
