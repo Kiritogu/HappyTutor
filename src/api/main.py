@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from src.api.routers import (
+    auth,
     agent_config,
     chat,
     config,
@@ -113,6 +114,7 @@ except Exception:
 app.mount("/api/outputs", StaticFiles(directory=str(user_dir)), name="outputs")
 
 # Include routers
+app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
 app.include_router(chat.router, prefix="/api/v1", tags=["chat"])
 app.include_router(question.router, prefix="/api/v1/question", tags=["question"])
 app.include_router(research.router, prefix="/api/v1/research", tags=["research"])
@@ -150,21 +152,16 @@ if __name__ == "__main__":
 
     backend_port = get_backend_port(project_root)
 
-    # Configure reload_excludes with absolute paths to properly exclude directories
-    venv_dir = project_root / "venv"
-    data_dir = project_root / "data"
+    # Configure reload_excludes with relative patterns for Windows compatibility.
     reload_excludes = [
-        str(d)
-        for d in [
-            venv_dir,
-            project_root / ".venv",
-            data_dir,
-            project_root / "web" / "node_modules",
-            project_root / "web" / ".next",
-            project_root / ".git",
-        ]
-        if d.exists()
+        "venv",
+        ".venv",
+        "data",
+        "web/node_modules",
+        "web/.next",
+        ".git",
     ]
+    reload_excludes = [d for d in reload_excludes if (project_root / d).exists()]
 
     uvicorn.run(
         "api.main:app",

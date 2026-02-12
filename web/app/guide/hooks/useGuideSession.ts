@@ -10,6 +10,7 @@ import {
 import {
   loadFromStorage,
   saveToStorage,
+  removeFromStorage,
   persistState,
   mergeWithDefaults,
   STORAGE_KEYS,
@@ -453,6 +454,13 @@ export function useGuideSession() {
     ],
   );
 
+  const resetSession = useCallback(() => {
+    setSessionState(INITIAL_SESSION_STATE);
+    setChatMessages([]);
+    removeFromStorage(STORAGE_KEYS.GUIDE_SESSION);
+    removeFromStorage(GUIDE_CHAT_KEY);
+  }, []);
+
   // Computed states
   const canStart =
     sessionState.status === "initialized" &&
@@ -479,5 +487,6 @@ export function useGuideSession() {
     nextKnowledge,
     sendMessage,
     fixHtml,
+    resetSession,
   };
 }

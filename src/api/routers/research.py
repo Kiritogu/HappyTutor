@@ -5,10 +5,14 @@ import sys
 import traceback
 from typing import Any
 
-from fastapi import APIRouter, WebSocket
+from fastapi import APIRouter, Depends, HTTPException, WebSocket
 from pydantic import BaseModel
 
 from src.agents.research.agents import RephraseAgent
+from src.api.dependencies.auth import (
+    get_current_user_from_authorization,
+    get_current_user_from_header,
+)
 from src.agents.research.graph import build_research_graph
 from src.api.utils.history import ActivityType, history_manager
 from src.api.utils.task_id_manager import TaskIDManager
@@ -25,6 +29,18 @@ router = APIRouter()
 from langfuse.langchain import CallbackHandler
 
 langfuse_handler = CallbackHandler()
+
+def _get_websocket_authorization(websocket: WebSocket) -> str | None:
+    authorization = websocket.headers.get("authorization")
+    if authorization:
+        return authorization
+
+    query_token = websocket.query_params.get("token")
+    if query_token:
+        return f"Bearer {query_token}"
+
+    return None
+
 
 # Helper to load config (with main.yaml merge)
 def load_config():
@@ -46,12 +62,16 @@ class OptimizeRequest(BaseModel):
 
 
 @router.post("/optimize_topic")
-async def optimize_topic(request: OptimizeRequest):
+async def optimize_topic(
+    request: OptimizeRequest,
+    current_user: dict = Depends(get_current_user_from_header),
+):
     try:
         config = load_config()
         config.setdefault("system", {})
         config["system"]["language"] = get_ui_language(
-            default=config.get("system", {}).get("language", "en")
+            user_id=current_user["id"],
+            default=config.get("system", {}).get("language", "en"),
         )
 
         # Inject API keys
@@ -83,6 +103,15 @@ async def optimize_topic(request: OptimizeRequest):
 
 @router.websocket("/run")
 async def websocket_research_run(websocket: WebSocket):
+    authorization = _get_websocket_authorization(websocket)
+    try:
+        current_user = get_current_user_from_authorization(authorization)
+    except HTTPException as exc:
+        await websocket.accept()
+        await websocket.send_json({"type": "error", "content": exc.detail})
+        await websocket.close(code=1008)
+        return
+
     await websocket.accept()
 
     # Get task ID manager
@@ -120,7 +149,8 @@ async def websocket_research_run(websocket: WebSocket):
         config = load_config()
         config.setdefault("system", {})
         config["system"]["language"] = get_ui_language(
-            default=config.get("system", {}).get("language", "en")
+            user_id=current_user["id"],
+            default=config.get("system", {}).get("language", "en"),
         )
         try:
             # Get log_dir from config
@@ -383,6 +413,7 @@ async def websocket_research_run(websocket: WebSocket):
 
             # Save to history
             history_manager.add_entry(
+                user_id=current_user["id"],
                 activity_type=ActivityType.RESEARCH,
                 title=topic,
                 content={"topic": topic, "report": report_content, "kb_name": kb_name},

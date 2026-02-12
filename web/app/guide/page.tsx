@@ -54,6 +54,7 @@ export default function GuidePage() {
     nextKnowledge,
     sendMessage,
     fixHtml,
+    resetSession,
   } = useGuideSession();
 
   // UI state
@@ -180,7 +181,7 @@ export default function GuidePage() {
             </p>
           </div>
         ) : isCompleted ? (
-          <CompletionSummary summary={sessionState.summary} />
+          <CompletionSummary summary={sessionState.summary} onReset={resetSession} />
         ) : sessionState.status === "learning" ? (
           <HTMLViewer
             html={sessionState.current_html}

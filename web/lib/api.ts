@@ -44,6 +44,19 @@ export function apiUrl(path: string): string {
  * @returns WebSocket URL (e.g., 'ws://localhost:{backend_port}/api/v1/solve')
  * Note: backend_port is configured in config/main.yaml
  */
+
+function getAccessTokenForWs(): string | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  try {
+    return localStorage.getItem("deeptutor-auth-access-token");
+  } catch {
+    return null;
+  }
+}
+
 export function wsUrl(path: string): string {
   // Security Hardening: Convert http to ws and https to wss.
   // In production environments (where API_BASE_URL starts with https), this ensures secure websockets.
@@ -55,5 +68,20 @@ export function wsUrl(path: string): string {
   // Remove trailing slash from base URL if present
   const normalizedBase = base.endsWith("/") ? base.slice(0, -1) : base;
 
-  return `${normalizedBase}${normalizedPath}`;
+  const fullUrl = `${normalizedBase}${normalizedPath}`;
+  const token = getAccessTokenForWs();
+
+  if (!token) {
+    return fullUrl;
+  }
+
+  try {
+    const url = new URL(fullUrl);
+    if (!url.searchParams.has("token")) {
+      url.searchParams.set("token", token);
+    }
+    return url.toString();
+  } catch {
+    return fullUrl;
+  }
 }

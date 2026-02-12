@@ -7,8 +7,10 @@ from pathlib import Path
 import sys
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+
+from src.api.dependencies.auth import get_current_user_from_header
 
 # Ensure module can be imported
 project_root = Path(__file__).parent.parent.parent.parent
@@ -63,7 +65,7 @@ class RemoveRecordRequest(BaseModel):
 
 
 @router.get("/list")
-async def list_notebooks():
+async def list_notebooks(current_user: dict = Depends(get_current_user_from_header)):
     """
     Get all notebook list
 
@@ -71,14 +73,14 @@ async def list_notebooks():
         Notebook list (includes summary information)
     """
     try:
-        notebooks = notebook_manager.list_notebooks()
+        notebooks = notebook_manager.list_notebooks(user_id=current_user["id"])
         return {"notebooks": notebooks, "total": len(notebooks)}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/statistics")
-async def get_statistics():
+async def get_statistics(current_user: dict = Depends(get_current_user_from_header)):
     """
     Get notebook statistics
 
@@ -86,14 +88,17 @@ async def get_statistics():
         Statistics information
     """
     try:
-        stats = notebook_manager.get_statistics()
+        stats = notebook_manager.get_statistics(user_id=current_user["id"])
         return stats
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/create")
-async def create_notebook(request: CreateNotebookRequest):
+async def create_notebook(
+    request: CreateNotebookRequest,
+    current_user: dict = Depends(get_current_user_from_header),
+):
     """
     Create new notebook
 
@@ -105,6 +110,7 @@ async def create_notebook(request: CreateNotebookRequest):
     """
     try:
         notebook = notebook_manager.create_notebook(
+            user_id=current_user["id"],
             name=request.name,
             description=request.description,
             color=request.color,
@@ -116,7 +122,7 @@ async def create_notebook(request: CreateNotebookRequest):
 
 
 @router.get("/{notebook_id}")
-async def get_notebook(notebook_id: str):
+async def get_notebook(notebook_id: str, current_user: dict = Depends(get_current_user_from_header)):
     """
     Get notebook details
 
@@ -127,7 +133,7 @@ async def get_notebook(notebook_id: str):
         Notebook details (includes all records)
     """
     try:
-        notebook = notebook_manager.get_notebook(notebook_id)
+        notebook = notebook_manager.get_notebook(user_id=current_user["id"], notebook_id=notebook_id)
         if not notebook:
             raise HTTPException(status_code=404, detail="Notebook not found")
         return notebook
@@ -138,7 +144,11 @@ async def get_notebook(notebook_id: str):
 
 
 @router.put("/{notebook_id}")
-async def update_notebook(notebook_id: str, request: UpdateNotebookRequest):
+async def update_notebook(
+    notebook_id: str,
+    request: UpdateNotebookRequest,
+    current_user: dict = Depends(get_current_user_from_header),
+):
     """
     Update notebook information
 
@@ -151,6 +161,7 @@ async def update_notebook(notebook_id: str, request: UpdateNotebookRequest):
     """
     try:
         notebook = notebook_manager.update_notebook(
+            user_id=current_user["id"],
             notebook_id=notebook_id,
             name=request.name,
             description=request.description,
@@ -167,7 +178,10 @@ async def update_notebook(notebook_id: str, request: UpdateNotebookRequest):
 
 
 @router.delete("/{notebook_id}")
-async def delete_notebook(notebook_id: str):
+async def delete_notebook(
+    notebook_id: str,
+    current_user: dict = Depends(get_current_user_from_header),
+):
     """
     Delete notebook
 
@@ -178,7 +192,7 @@ async def delete_notebook(notebook_id: str):
         Deletion result
     """
     try:
-        success = notebook_manager.delete_notebook(notebook_id)
+        success = notebook_manager.delete_notebook(user_id=current_user["id"], notebook_id=notebook_id)
         if not success:
             raise HTTPException(status_code=404, detail="Notebook not found")
         return {"success": True, "message": "Notebook deleted successfully"}
@@ -189,7 +203,10 @@ async def delete_notebook(notebook_id: str):
 
 
 @router.post("/add_record")
-async def add_record(request: AddRecordRequest):
+async def add_record(
+    request: AddRecordRequest,
+    current_user: dict = Depends(get_current_user_from_header),
+):
     """
     Add record to notebook
 
@@ -201,6 +218,7 @@ async def add_record(request: AddRecordRequest):
     """
     try:
         result = notebook_manager.add_record(
+            user_id=current_user["id"],
             notebook_ids=request.notebook_ids,
             record_type=request.record_type,
             title=request.title,
@@ -219,7 +237,11 @@ async def add_record(request: AddRecordRequest):
 
 
 @router.delete("/{notebook_id}/records/{record_id}")
-async def remove_record(notebook_id: str, record_id: str):
+async def remove_record(
+    notebook_id: str,
+    record_id: str,
+    current_user: dict = Depends(get_current_user_from_header),
+):
     """
     Remove record from notebook
 
@@ -231,7 +253,11 @@ async def remove_record(notebook_id: str, record_id: str):
         Deletion result
     """
     try:
-        success = notebook_manager.remove_record(notebook_id, record_id)
+        success = notebook_manager.remove_record(
+            user_id=current_user["id"],
+            notebook_id=notebook_id,
+            record_id=record_id,
+        )
         if not success:
             raise HTTPException(status_code=404, detail="Record not found")
         return {"success": True, "message": "Record removed successfully"}

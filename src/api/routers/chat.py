@@ -9,11 +9,15 @@ REST endpoints for session operations.
 from pathlib import Path
 import sys
 
-from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 
 _project_root = Path(__file__).parent.parent.parent.parent
 sys.path.insert(0, str(_project_root))
 
+from src.api.dependencies.auth import (
+    get_current_user_from_authorization,
+    get_current_user_from_header,
+)
 from src.agents.chat import ChatAgent, SessionManager
 from src.logging import get_logger
 from src.services.config import load_config_with_main
@@ -38,7 +42,10 @@ session_manager = SessionManager()
 
 
 @router.get("/chat/sessions")
-async def list_sessions(limit: int = 20):
+async def list_sessions(
+    limit: int = 20,
+    current_user: dict = Depends(get_current_user_from_header),
+):
     """
     List recent chat sessions.
 
@@ -48,11 +55,18 @@ async def list_sessions(limit: int = 20):
     Returns:
         List of session summaries
     """
-    return session_manager.list_sessions(limit=limit, include_messages=False)
+    return session_manager.list_sessions(
+        user_id=current_user["id"],
+        limit=limit,
+        include_messages=False,
+    )
 
 
 @router.get("/chat/sessions/{session_id}")
-async def get_session(session_id: str):
+async def get_session(
+    session_id: str,
+    current_user: dict = Depends(get_current_user_from_header),
+):
     """
     Get a specific chat session with full message history.
 
@@ -62,14 +76,17 @@ async def get_session(session_id: str):
     Returns:
         Complete session data including messages
     """
-    session = session_manager.get_session(session_id)
+    session = session_manager.get_session(user_id=current_user["id"], session_id=session_id)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
     return session
 
 
 @router.delete("/chat/sessions/{session_id}")
-async def delete_session(session_id: str):
+async def delete_session(
+    session_id: str,
+    current_user: dict = Depends(get_current_user_from_header),
+):
     """
     Delete a chat session.
 
@@ -79,7 +96,7 @@ async def delete_session(session_id: str):
     Returns:
         Success message
     """
-    if session_manager.delete_session(session_id):
+    if session_manager.delete_session(user_id=current_user["id"], session_id=session_id):
         return {"status": "deleted", "session_id": session_id}
     raise HTTPException(status_code=404, detail="Session not found")
 
@@ -112,6 +129,20 @@ async def websocket_chat(websocket: WebSocket):
     - {"type": "result", "content": str}               # Final complete response
     - {"type": "error", "message": str}                # Error message
     """
+    authorization = websocket.headers.get("authorization")
+    if not authorization:
+        query_token = websocket.query_params.get("token")
+        if query_token:
+            authorization = f"Bearer {query_token}"
+
+    try:
+        current_user = get_current_user_from_authorization(authorization)
+    except HTTPException as exc:
+        await websocket.accept()
+        await websocket.send_json({"type": "error", "message": exc.detail})
+        await websocket.close(code=1008)
+        return
+
     await websocket.accept()
 
     try:
@@ -119,7 +150,10 @@ async def websocket_chat(websocket: WebSocket):
             # Receive message
             data = await websocket.receive_json()
             # Use current UI language (fallback to config/main.yaml system.language)
-            language = get_ui_language(default=config.get("system", {}).get("language", "en"))
+            language = get_ui_language(
+                user_id=current_user["id"],
+                default=config.get("system", {}).get("language", "en"),
+            )
             message = data.get("message", "").strip()
             session_id = data.get("session_id")
             explicit_history = data.get("history")  # Optional override
@@ -139,10 +173,14 @@ async def websocket_chat(websocket: WebSocket):
             try:
                 # Get or create session
                 if session_id:
-                    session = session_manager.get_session(session_id)
+                    session = session_manager.get_session(
+                        user_id=current_user["id"],
+                        session_id=session_id,
+                    )
                     if not session:
                         # Session not found, create new one
                         session = session_manager.create_session(
+                            user_id=current_user["id"],
                             title=message[:50] + ("..." if len(message) > 50 else ""),
                             settings={
                                 "kb_name": kb_name,
@@ -154,6 +192,7 @@ async def websocket_chat(websocket: WebSocket):
                 else:
                     # Create new session
                     session = session_manager.create_session(
+                        user_id=current_user["id"],
                         title=message[:50] + ("..." if len(message) > 50 else ""),
                         settings={
                             "kb_name": kb_name,
@@ -183,6 +222,7 @@ async def websocket_chat(websocket: WebSocket):
 
                 # Add user message to session
                 session_manager.add_message(
+                    user_id=current_user["id"],
                     session_id=session_id,
                     role="user",
                     content=message,
@@ -271,6 +311,7 @@ async def websocket_chat(websocket: WebSocket):
 
                 # Save assistant message to session
                 session_manager.add_message(
+                    user_id=current_user["id"],
                     session_id=session_id,
                     role="assistant",
                     content=full_response,

@@ -17,6 +17,8 @@ from contextlib import contextmanager
 
 logger = logging.getLogger(__name__)
 
+SYSTEM_USER_ID = "00000000-0000-0000-0000-000000000000"
+
 try:
     import psycopg2  # type: ignore
     from psycopg2.pool import ThreadedConnectionPool  # type: ignore
@@ -160,6 +162,67 @@ class PostgresUserDB:
                 updated_at DOUBLE PRECISION NOT NULL
             )
             """,
+            "ALTER TABLE notebooks ADD COLUMN IF NOT EXISTS user_id UUID",
+            "CREATE INDEX IF NOT EXISTS idx_notebooks_user_id ON notebooks(user_id)",
+            "ALTER TABLE history_entries ADD COLUMN IF NOT EXISTS user_id UUID",
+            "CREATE INDEX IF NOT EXISTS idx_history_user_id_ts ON history_entries(user_id, timestamp)",
+            "ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS user_id UUID",
+            "CREATE INDEX IF NOT EXISTS idx_chat_sessions_user_id_updated ON chat_sessions(user_id, updated_at)",
+            "ALTER TABLE ui_settings ADD COLUMN IF NOT EXISTS user_id UUID",
+            f"UPDATE ui_settings SET user_id = '{SYSTEM_USER_ID}'::uuid WHERE user_id IS NULL",
+            "ALTER TABLE ui_settings ALTER COLUMN user_id SET NOT NULL",
+            "ALTER TABLE ui_settings DROP CONSTRAINT IF EXISTS ui_settings_pkey",
+            "ALTER TABLE ui_settings ADD PRIMARY KEY (key, user_id)",
+            "CREATE EXTENSION IF NOT EXISTS citext",
+            """
+            CREATE TABLE IF NOT EXISTS users (
+                id UUID PRIMARY KEY,
+                email CITEXT NOT NULL UNIQUE,
+                password_hash TEXT NOT NULL,
+                is_email_verified BOOLEAN NOT NULL DEFAULT FALSE,
+                status TEXT NOT NULL DEFAULT 'active',
+                created_at DOUBLE PRECISION NOT NULL,
+                updated_at DOUBLE PRECISION NOT NULL,
+                last_login_at DOUBLE PRECISION
+            )
+            """,
+            "CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)",
+            """
+            CREATE TABLE IF NOT EXISTS refresh_tokens (
+                id UUID PRIMARY KEY,
+                user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                token_hash TEXT NOT NULL UNIQUE,
+                expires_at DOUBLE PRECISION NOT NULL,
+                revoked_at DOUBLE PRECISION,
+                created_at DOUBLE PRECISION NOT NULL,
+                created_ip TEXT,
+                user_agent TEXT
+            )
+            """,
+            "CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user_id ON refresh_tokens(user_id)",
+            "CREATE INDEX IF NOT EXISTS idx_refresh_tokens_expires_at ON refresh_tokens(expires_at)",
+            """
+            CREATE TABLE IF NOT EXISTS email_verification_tokens (
+                id UUID PRIMARY KEY,
+                user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                token_hash TEXT NOT NULL UNIQUE,
+                expires_at DOUBLE PRECISION NOT NULL,
+                used_at DOUBLE PRECISION,
+                created_at DOUBLE PRECISION NOT NULL
+            )
+            """,
+            "CREATE INDEX IF NOT EXISTS idx_email_verification_tokens_user_id ON email_verification_tokens(user_id)",
+            """
+            CREATE TABLE IF NOT EXISTS password_reset_tokens (
+                id UUID PRIMARY KEY,
+                user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                token_hash TEXT NOT NULL UNIQUE,
+                expires_at DOUBLE PRECISION NOT NULL,
+                used_at DOUBLE PRECISION,
+                created_at DOUBLE PRECISION NOT NULL
+            )
+            """,
+            "CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user_id ON password_reset_tokens(user_id)",
         ]
 
         with self._conn() as conn:
@@ -334,11 +397,11 @@ class PostgresUserDB:
                     updated_at = float(session.get("updated_at") or created_at)
 
                     cur.execute(
-                        "INSERT INTO chat_sessions(session_id, title, settings, created_at, updated_at) "
-                        "VALUES (%s, %s, %s, %s, %s) "
+                        "INSERT INTO chat_sessions(session_id, user_id, title, settings, created_at, updated_at) "
+                        "VALUES (%s, %s, %s, %s, %s, %s) "
                         "ON CONFLICT(session_id) DO UPDATE SET "
-                        "title=EXCLUDED.title, settings=EXCLUDED.settings, updated_at=EXCLUDED.updated_at",
-                        (session_id, title, _safe_json_dumps(settings), created_at, updated_at),
+                        "user_id=EXCLUDED.user_id, title=EXCLUDED.title, settings=EXCLUDED.settings, updated_at=EXCLUDED.updated_at",
+                        (session_id, SYSTEM_USER_ID, title, _safe_json_dumps(settings), created_at, updated_at),
                     )
 
                     cur.execute(
@@ -371,9 +434,9 @@ class PostgresUserDB:
         with self._conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "INSERT INTO ui_settings(key, value, updated_at) VALUES (%s, %s, %s) "
-                    "ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value, updated_at=EXCLUDED.updated_at",
-                    ("interface", _safe_json_dumps(settings), now),
+                    "INSERT INTO ui_settings(key, user_id, value, updated_at) VALUES (%s, %s, %s, %s) "
+                    "ON CONFLICT(key, user_id) DO UPDATE SET value=EXCLUDED.value, updated_at=EXCLUDED.updated_at",
+                    ("interface", SYSTEM_USER_ID, _safe_json_dumps(settings), now),
                 )
 
     # -------------------------------------------------------------------------
@@ -383,6 +446,7 @@ class PostgresUserDB:
     def notebook_create(
         self,
         *,
+        user_id: str,
         name: str,
         description: str = "",
         color: str = "#3B82F6",
@@ -395,12 +459,13 @@ class PostgresUserDB:
                 with self._conn() as conn:
                     with conn.cursor() as cur:
                         cur.execute(
-                            "INSERT INTO notebooks(id, name, description, created_at, updated_at, color, icon) "
-                            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
-                            (notebook_id, name, description, now, now, color, icon),
+                            "INSERT INTO notebooks(id, user_id, name, description, created_at, updated_at, color, icon) "
+                            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                            (notebook_id, user_id, name, description, now, now, color, icon),
                         )
                 return {
                     "id": notebook_id,
+                    "user_id": user_id,
                     "name": name,
                     "description": description,
                     "created_at": now,
@@ -416,10 +481,11 @@ class PostgresUserDB:
 
         raise RuntimeError("Failed to create notebook (ID collision)")
 
-    def notebook_list(self, *, limit: int | None = None) -> list[dict[str, Any]]:
+    def notebook_list(self, *, user_id: str, limit: int | None = None) -> list[dict[str, Any]]:
         sql = """
         SELECT
             n.id,
+            n.user_id,
             n.name,
             n.description,
             n.created_at,
@@ -433,12 +499,13 @@ class PostgresUserDB:
             FROM notebook_records
             GROUP BY notebook_id
         ) r ON r.notebook_id = n.id
+        WHERE n.user_id = %s
         ORDER BY n.updated_at DESC
         """
-        params: tuple[Any, ...] = ()
+        params: tuple[Any, ...] = (user_id,)
         if isinstance(limit, int) and limit > 0:
             sql += " LIMIT %s"
-            params = (limit,)
+            params = (user_id, limit)
 
         with self._conn() as conn:
             with conn.cursor() as cur:
@@ -448,24 +515,25 @@ class PostgresUserDB:
         return [
             {
                 "id": r[0],
-                "name": r[1],
-                "description": r[2],
-                "created_at": float(r[3]),
-                "updated_at": float(r[4]),
-                "record_count": int(r[7] or 0),
-                "color": r[5],
-                "icon": r[6],
+                "user_id": r[1],
+                "name": r[2],
+                "description": r[3],
+                "created_at": float(r[4]),
+                "updated_at": float(r[5]),
+                "record_count": int(r[8] or 0),
+                "color": r[6],
+                "icon": r[7],
             }
             for r in rows
         ]
 
-    def notebook_get(self, notebook_id: str) -> dict[str, Any] | None:
+    def notebook_get(self, *, user_id: str, notebook_id: str) -> dict[str, Any] | None:
         with self._conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT id, name, description, created_at, updated_at, color, icon "
-                    "FROM notebooks WHERE id = %s",
-                    (notebook_id,),
+                    "SELECT id, user_id, name, description, created_at, updated_at, color, icon "
+                    "FROM notebooks WHERE id = %s AND user_id = %s",
+                    (notebook_id, user_id),
                 )
                 nb = cur.fetchone()
                 if not nb:
@@ -503,19 +571,21 @@ class PostgresUserDB:
 
         return {
             "id": nb[0],
-            "name": nb[1],
-            "description": nb[2],
-            "created_at": float(nb[3]),
-            "updated_at": float(nb[4]),
+            "user_id": nb[1],
+            "name": nb[2],
+            "description": nb[3],
+            "created_at": float(nb[4]),
+            "updated_at": float(nb[5]),
             "records": records,
-            "color": nb[5],
-            "icon": nb[6],
+            "color": nb[6],
+            "icon": nb[7],
         }
 
     def notebook_update(
         self,
         notebook_id: str,
         *,
+        user_id: str,
         name: str | None = None,
         description: str | None = None,
         color: str | None = None,
@@ -540,27 +610,32 @@ class PostgresUserDB:
         fields.append("updated_at = %s")
         values.append(now)
         values.append(notebook_id)
+        values.append(user_id)
 
         with self._conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    f"UPDATE notebooks SET {', '.join(fields)} WHERE id = %s",
+                    f"UPDATE notebooks SET {', '.join(fields)} WHERE id = %s AND user_id = %s",
                     tuple(values),
                 )
                 if cur.rowcount == 0:
                     return None
 
-        return self.notebook_get(notebook_id)
+        return self.notebook_get(user_id=user_id, notebook_id=notebook_id)
 
-    def notebook_delete(self, notebook_id: str) -> bool:
+    def notebook_delete(self, *, user_id: str, notebook_id: str) -> bool:
         with self._conn() as conn:
             with conn.cursor() as cur:
-                cur.execute("DELETE FROM notebooks WHERE id = %s", (notebook_id,))
+                cur.execute(
+                    "DELETE FROM notebooks WHERE id = %s AND user_id = %s",
+                    (notebook_id, user_id),
+                )
                 return cur.rowcount > 0
 
     def notebook_add_record(
         self,
         *,
+        user_id: str,
         notebook_ids: list[str],
         record_type: Any,
         title: str,
@@ -587,7 +662,10 @@ class PostgresUserDB:
         with self._conn() as conn:
             with conn.cursor() as cur:
                 for notebook_id in notebook_ids:
-                    cur.execute("SELECT 1 FROM notebooks WHERE id = %s", (notebook_id,))
+                    cur.execute(
+                        "SELECT 1 FROM notebooks WHERE id = %s AND user_id = %s",
+                        (notebook_id, user_id),
+                    )
                     if not cur.fetchone():
                         continue
 
@@ -612,17 +690,23 @@ class PostgresUserDB:
                         ),
                     )
                     cur.execute(
-                        "UPDATE notebooks SET updated_at = %s WHERE id = %s",
-                        (now, notebook_id),
+                        "UPDATE notebooks SET updated_at = %s WHERE id = %s AND user_id = %s",
+                        (now, notebook_id, user_id),
                     )
                     added_to.append(notebook_id)
 
         return {"record": record, "added_to_notebooks": added_to}
 
-    def notebook_remove_record(self, *, notebook_id: str, record_id: str) -> bool:
+    def notebook_remove_record(self, *, user_id: str, notebook_id: str, record_id: str) -> bool:
         now = time.time()
         with self._conn() as conn:
             with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT 1 FROM notebooks WHERE id = %s AND user_id = %s",
+                    (notebook_id, user_id),
+                )
+                if not cur.fetchone():
+                    return False
                 cur.execute(
                     "DELETE FROM notebook_records WHERE notebook_id = %s AND record_id = %s",
                     (notebook_id, record_id),
@@ -630,23 +714,36 @@ class PostgresUserDB:
                 if cur.rowcount == 0:
                     return False
                 cur.execute(
-                    "UPDATE notebooks SET updated_at = %s WHERE id = %s",
-                    (now, notebook_id),
+                    "UPDATE notebooks SET updated_at = %s WHERE id = %s AND user_id = %s",
+                    (now, notebook_id, user_id),
                 )
                 return True
 
-    def notebook_statistics(self) -> dict[str, Any]:
+    def notebook_statistics(self, *, user_id: str) -> dict[str, Any]:
         with self._conn() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT COUNT(1) FROM notebooks")
+                cur.execute("SELECT COUNT(1) FROM notebooks WHERE user_id = %s", (user_id,))
                 total_notebooks = int(cur.fetchone()[0])
-                cur.execute("SELECT COUNT(1) FROM notebook_records")
+                cur.execute(
+                    "SELECT COUNT(1) "
+                    "FROM notebook_records r "
+                    "JOIN notebooks n ON n.id = r.notebook_id "
+                    "WHERE n.user_id = %s",
+                    (user_id,),
+                )
                 total_records = int(cur.fetchone()[0])
-                cur.execute("SELECT type, COUNT(1) FROM notebook_records GROUP BY type")
+                cur.execute(
+                    "SELECT r.type, COUNT(1) "
+                    "FROM notebook_records r "
+                    "JOIN notebooks n ON n.id = r.notebook_id "
+                    "WHERE n.user_id = %s "
+                    "GROUP BY r.type",
+                    (user_id,),
+                )
                 type_rows = cur.fetchall()
 
         type_counts: dict[str, int] = {str(r[0]): int(r[1]) for r in type_rows}
-        recent = self.notebook_list(limit=5)
+        recent = self.notebook_list(user_id=user_id, limit=5)
         return {
             "total_notebooks": total_notebooks,
             "total_records": total_records,
@@ -666,6 +763,7 @@ class PostgresUserDB:
     def history_add_entry(
         self,
         *,
+        user_id: str,
         activity_type: Any,
         title: str,
         content: dict,
@@ -688,19 +786,28 @@ class PostgresUserDB:
             with conn.cursor() as cur:
                 try:
                     cur.execute(
-                        "INSERT INTO history_entries(id, timestamp, type, title, summary, content) "
-                        "VALUES (%s, %s, %s, %s, %s, %s)",
-                        (entry_id, ts, str(activity_type), title, summary, _safe_json_dumps(content)),
+                        "INSERT INTO history_entries(id, user_id, timestamp, type, title, summary, content) "
+                        "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                        (
+                            entry_id,
+                            user_id,
+                            ts,
+                            str(activity_type),
+                            title,
+                            summary,
+                            _safe_json_dumps(content),
+                        ),
                     )
                 except Exception as e:
                     if psycopg2 is not None and isinstance(e, psycopg2.IntegrityError):
                         entry_id = f"{base_id}_{uuid.uuid4().hex[:4]}"
                         entry["id"] = entry_id
                         cur.execute(
-                            "INSERT INTO history_entries(id, timestamp, type, title, summary, content) "
-                            "VALUES (%s, %s, %s, %s, %s, %s)",
+                            "INSERT INTO history_entries(id, user_id, timestamp, type, title, summary, content) "
+                            "VALUES (%s, %s, %s, %s, %s, %s, %s)",
                             (
                                 entry_id,
+                                user_id,
                                 ts,
                                 str(activity_type),
                                 title,
@@ -711,32 +818,38 @@ class PostgresUserDB:
                     else:
                         raise
 
-                cur.execute("SELECT COUNT(1) FROM history_entries")
+                cur.execute("SELECT COUNT(1) FROM history_entries WHERE user_id = %s", (user_id,))
                 count = int(cur.fetchone()[0])
                 extra = count - int(limit)
                 if extra > 0:
                     cur.execute(
                         "DELETE FROM history_entries WHERE id IN ("
-                        "  SELECT id FROM history_entries ORDER BY timestamp ASC LIMIT %s"
+                        "  SELECT id FROM history_entries WHERE user_id = %s ORDER BY timestamp ASC LIMIT %s"
                         ")",
-                        (extra,),
+                        (user_id, extra),
                     )
 
         return entry
 
-    def history_get_recent(self, *, limit: int = 10, type_filter: str | None = None) -> list[dict]:
+    def history_get_recent(
+        self,
+        *,
+        user_id: str,
+        limit: int = 10,
+        type_filter: str | None = None,
+    ) -> list[dict]:
         if type_filter:
             sql = (
                 "SELECT id, timestamp, type, title, summary, content "
-                "FROM history_entries WHERE type = %s ORDER BY timestamp DESC LIMIT %s"
+                "FROM history_entries WHERE user_id = %s AND type = %s ORDER BY timestamp DESC LIMIT %s"
             )
-            params = (type_filter, limit)
+            params = (user_id, type_filter, limit)
         else:
             sql = (
                 "SELECT id, timestamp, type, title, summary, content "
-                "FROM history_entries ORDER BY timestamp DESC LIMIT %s"
+                "FROM history_entries WHERE user_id = %s ORDER BY timestamp DESC LIMIT %s"
             )
-            params = (limit,)
+            params = (user_id, limit)
 
         with self._conn() as conn:
             with conn.cursor() as cur:
@@ -764,13 +877,13 @@ class PostgresUserDB:
             )
         return results
 
-    def history_get_entry(self, entry_id: str) -> dict[str, Any] | None:
+    def history_get_entry(self, *, user_id: str, entry_id: str) -> dict[str, Any] | None:
         with self._conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     "SELECT id, timestamp, type, title, summary, content "
-                    "FROM history_entries WHERE id = %s",
-                    (entry_id,),
+                    "FROM history_entries WHERE id = %s AND user_id = %s",
+                    (entry_id, user_id),
                 )
                 r = cur.fetchone()
                 if not r:
@@ -799,6 +912,7 @@ class PostgresUserDB:
     def chat_create_session(
         self,
         *,
+        user_id: str,
         title: str = "New Chat",
         settings: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
@@ -816,20 +930,20 @@ class PostgresUserDB:
         with self._conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "INSERT INTO chat_sessions(session_id, title, settings, created_at, updated_at) "
-                    "VALUES (%s, %s, %s, %s, %s)",
-                    (session_id, session["title"], _safe_json_dumps(session["settings"]), now, now),
+                    "INSERT INTO chat_sessions(session_id, user_id, title, settings, created_at, updated_at) "
+                    "VALUES (%s, %s, %s, %s, %s, %s)",
+                    (session_id, user_id, session["title"], _safe_json_dumps(session["settings"]), now, now),
                 )
 
         return session
 
-    def chat_get_session(self, session_id: str) -> dict[str, Any] | None:
+    def chat_get_session(self, *, user_id: str, session_id: str) -> dict[str, Any] | None:
         with self._conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT session_id, title, settings, created_at, updated_at "
-                    "FROM chat_sessions WHERE session_id = %s",
-                    (session_id,),
+                    "SELECT session_id, user_id, title, settings, created_at, updated_at "
+                    "FROM chat_sessions WHERE session_id = %s AND user_id = %s",
+                    (session_id, user_id),
                 )
                 s = cur.fetchone()
                 if not s:
@@ -845,7 +959,7 @@ class PostgresUserDB:
 
         settings: dict[str, Any] = {}
         try:
-            settings = json.loads(s[2]) if s[2] else {}
+            settings = json.loads(s[3]) if s[3] else {}
             if not isinstance(settings, dict):
                 settings = {}
         except Exception:
@@ -867,17 +981,19 @@ class PostgresUserDB:
 
         return {
             "session_id": s[0],
-            "title": s[1],
+            "user_id": s[1],
+            "title": s[2],
             "messages": messages,
             "settings": settings,
-            "created_at": float(s[3]),
-            "updated_at": float(s[4]),
+            "created_at": float(s[4]),
+            "updated_at": float(s[5]),
         }
 
     def chat_update_session(
         self,
         session_id: str,
         *,
+        user_id: str,
         messages: list[dict[str, Any]] | None = None,
         title: str | None = None,
         settings: dict[str, Any] | None = None,
@@ -885,24 +1001,27 @@ class PostgresUserDB:
         now = time.time()
         with self._conn() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT 1 FROM chat_sessions WHERE session_id = %s", (session_id,))
+                cur.execute(
+                    "SELECT 1 FROM chat_sessions WHERE session_id = %s AND user_id = %s",
+                    (session_id, user_id),
+                )
                 if not cur.fetchone():
                     return None
 
                 if title is not None:
                     cur.execute(
-                        "UPDATE chat_sessions SET title = %s, updated_at = %s WHERE session_id = %s",
-                        (title[:100], now, session_id),
+                        "UPDATE chat_sessions SET title = %s, updated_at = %s WHERE session_id = %s AND user_id = %s",
+                        (title[:100], now, session_id, user_id),
                     )
                 if settings is not None:
                     cur.execute(
-                        "UPDATE chat_sessions SET settings = %s, updated_at = %s WHERE session_id = %s",
-                        (_safe_json_dumps(settings), now, session_id),
+                        "UPDATE chat_sessions SET settings = %s, updated_at = %s WHERE session_id = %s AND user_id = %s",
+                        (_safe_json_dumps(settings), now, session_id, user_id),
                     )
                 if title is None and settings is None:
                     cur.execute(
-                        "UPDATE chat_sessions SET updated_at = %s WHERE session_id = %s",
-                        (now, session_id),
+                        "UPDATE chat_sessions SET updated_at = %s WHERE session_id = %s AND user_id = %s",
+                        (now, session_id, user_id),
                     )
 
                 if messages is not None:
@@ -921,11 +1040,12 @@ class PostgresUserDB:
                             (session_id, role, content, sources_json, ts),
                         )
 
-        return self.chat_get_session(session_id)
+        return self.chat_get_session(user_id=user_id, session_id=session_id)
 
     def chat_add_message(
         self,
         *,
+        user_id: str,
         session_id: str,
         role: str,
         content: str,
@@ -934,8 +1054,8 @@ class PostgresUserDB:
         with self._conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "SELECT title FROM chat_sessions WHERE session_id = %s",
-                    (session_id,),
+                    "SELECT title FROM chat_sessions WHERE session_id = %s AND user_id = %s",
+                    (session_id, user_id),
                 )
                 row = cur.fetchone()
                 if not row:
@@ -955,28 +1075,34 @@ class PostgresUserDB:
 
                 if new_title is not None:
                     cur.execute(
-                        "UPDATE chat_sessions SET title = %s, updated_at = %s WHERE session_id = %s",
-                        (new_title[:100], ts, session_id),
+                        "UPDATE chat_sessions SET title = %s, updated_at = %s WHERE session_id = %s AND user_id = %s",
+                        (new_title[:100], ts, session_id, user_id),
                     )
                 else:
                     cur.execute(
-                        "UPDATE chat_sessions SET updated_at = %s WHERE session_id = %s",
-                        (ts, session_id),
+                        "UPDATE chat_sessions SET updated_at = %s WHERE session_id = %s AND user_id = %s",
+                        (ts, session_id, user_id),
                     )
 
-        return self.chat_get_session(session_id)
+        return self.chat_get_session(user_id=user_id, session_id=session_id)
 
-    def chat_list_sessions(self, *, limit: int = 20, include_messages: bool = False) -> list[dict]:
+    def chat_list_sessions(
+        self,
+        *,
+        user_id: str,
+        limit: int = 20,
+        include_messages: bool = False,
+    ) -> list[dict]:
         if include_messages:
             with self._conn() as conn:
                 with conn.cursor() as cur:
                     cur.execute(
-                        "SELECT session_id FROM chat_sessions ORDER BY updated_at DESC LIMIT %s",
-                        (limit,),
+                        "SELECT session_id FROM chat_sessions WHERE user_id = %s ORDER BY updated_at DESC LIMIT %s",
+                        (user_id, limit),
                     )
                     session_rows = cur.fetchall()
             session_ids = [r[0] for r in session_rows]
-            return [self.chat_get_session(sid) for sid in session_ids if sid]
+            return [self.chat_get_session(user_id=user_id, session_id=sid) for sid in session_ids if sid]
 
         sql = """
         SELECT
@@ -1000,12 +1126,13 @@ class PostgresUserDB:
             ORDER BY m.timestamp DESC, m.id DESC
             LIMIT 1
         ) lm ON TRUE
+        WHERE s.user_id = %s
         ORDER BY s.updated_at DESC
         LIMIT %s
         """
         with self._conn() as conn:
             with conn.cursor() as cur:
-                cur.execute(sql, (limit,))
+                cur.execute(sql, (user_id, limit))
                 rows = cur.fetchall()
 
         summaries: list[dict[str, Any]] = []
@@ -1031,28 +1158,34 @@ class PostgresUserDB:
 
         return summaries
 
-    def chat_delete_session(self, session_id: str) -> bool:
+    def chat_delete_session(self, *, user_id: str, session_id: str) -> bool:
         with self._conn() as conn:
             with conn.cursor() as cur:
-                cur.execute("DELETE FROM chat_sessions WHERE session_id = %s", (session_id,))
+                cur.execute(
+                    "DELETE FROM chat_sessions WHERE session_id = %s AND user_id = %s",
+                    (session_id, user_id),
+                )
                 return cur.rowcount > 0
 
-    def chat_clear_all_sessions(self) -> int:
+    def chat_clear_all_sessions(self, *, user_id: str) -> int:
         with self._conn() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT COUNT(1) FROM chat_sessions")
+                cur.execute("SELECT COUNT(1) FROM chat_sessions WHERE user_id = %s", (user_id,))
                 count = int(cur.fetchone()[0])
-                cur.execute("DELETE FROM chat_sessions")
+                cur.execute("DELETE FROM chat_sessions WHERE user_id = %s", (user_id,))
                 return count
 
     # -------------------------------------------------------------------------
     # UI settings
     # -------------------------------------------------------------------------
 
-    def ui_get(self, *, key: str = "interface") -> dict[str, Any] | None:
+    def ui_get(self, *, user_id: str, key: str = "interface") -> dict[str, Any] | None:
         with self._conn() as conn:
             with conn.cursor() as cur:
-                cur.execute("SELECT value FROM ui_settings WHERE key = %s", (key,))
+                cur.execute(
+                    "SELECT value FROM ui_settings WHERE key = %s AND user_id = %s",
+                    (key, user_id),
+                )
                 row = cur.fetchone()
                 if not row:
                     return None
@@ -1063,12 +1196,330 @@ class PostgresUserDB:
         except Exception:
             return None
 
-    def ui_set(self, *, key: str = "interface", value: dict[str, Any]) -> None:
+    def ui_set(self, *, user_id: str, key: str = "interface", value: dict[str, Any]) -> None:
         now = time.time()
         with self._conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "INSERT INTO ui_settings(key, value, updated_at) VALUES (%s, %s, %s) "
-                    "ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value, updated_at=EXCLUDED.updated_at",
-                    (key, _safe_json_dumps(value), now),
+                    "INSERT INTO ui_settings(key, user_id, value, updated_at) VALUES (%s, %s, %s, %s) "
+                    "ON CONFLICT(key, user_id) DO UPDATE SET value=EXCLUDED.value, updated_at=EXCLUDED.updated_at",
+                    (key, user_id, _safe_json_dumps(value), now),
                 )
+
+    # -------------------------------------------------------------------------
+    # Authentication
+    # -------------------------------------------------------------------------
+
+    def auth_create_user(self, *, email: str, password_hash: str) -> dict[str, Any]:
+        now = time.time()
+        user_id = str(uuid.uuid4())
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO users(id, email, password_hash, is_email_verified, status, created_at, updated_at) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+                    (user_id, email, password_hash, False, "active", now, now),
+                )
+        return {
+            "id": user_id,
+            "email": email,
+            "password_hash": password_hash,
+            "is_email_verified": False,
+            "status": "active",
+            "created_at": now,
+            "updated_at": now,
+            "last_login_at": None,
+        }
+
+    def auth_get_user_by_email(self, email: str) -> dict[str, Any] | None:
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id, email, password_hash, is_email_verified, status, created_at, updated_at, last_login_at "
+                    "FROM users WHERE email = %s",
+                    (email,),
+                )
+                row = cur.fetchone()
+        if not row:
+            return None
+        return {
+            "id": str(row[0]),
+            "email": str(row[1]),
+            "password_hash": str(row[2]),
+            "is_email_verified": bool(row[3]),
+            "status": str(row[4]),
+            "created_at": float(row[5]),
+            "updated_at": float(row[6]),
+            "last_login_at": float(row[7]) if row[7] is not None else None,
+        }
+
+    def auth_get_user_by_id(self, user_id: str) -> dict[str, Any] | None:
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id, email, password_hash, is_email_verified, status, created_at, updated_at, last_login_at "
+                    "FROM users WHERE id = %s",
+                    (user_id,),
+                )
+                row = cur.fetchone()
+        if not row:
+            return None
+        return {
+            "id": str(row[0]),
+            "email": str(row[1]),
+            "password_hash": str(row[2]),
+            "is_email_verified": bool(row[3]),
+            "status": str(row[4]),
+            "created_at": float(row[5]),
+            "updated_at": float(row[6]),
+            "last_login_at": float(row[7]) if row[7] is not None else None,
+        }
+
+    def auth_update_password_hash(self, *, user_id: str, password_hash: str) -> bool:
+        now = time.time()
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE users SET password_hash = %s, updated_at = %s WHERE id = %s",
+                    (password_hash, now, user_id),
+                )
+                return cur.rowcount > 0
+
+    def auth_set_email_verified(self, *, user_id: str) -> bool:
+        now = time.time()
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE users SET is_email_verified = TRUE, updated_at = %s WHERE id = %s",
+                    (now, user_id),
+                )
+                return cur.rowcount > 0
+
+    def auth_update_last_login_at(self, *, user_id: str) -> bool:
+        now = time.time()
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE users SET last_login_at = %s, updated_at = %s WHERE id = %s",
+                    (now, now, user_id),
+                )
+                return cur.rowcount > 0
+
+    def auth_create_refresh_token(
+        self,
+        *,
+        user_id: str,
+        token_hash: str,
+        expires_at: float,
+        token_id: str | None = None,
+        created_ip: str | None = None,
+        user_agent: str | None = None,
+    ) -> dict[str, Any]:
+        token_id = token_id or str(uuid.uuid4())
+        now = time.time()
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO refresh_tokens(id, user_id, token_hash, expires_at, revoked_at, created_at, created_ip, user_agent) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                    (token_id, user_id, token_hash, expires_at, None, now, created_ip, user_agent),
+                )
+        return {
+            "id": token_id,
+            "user_id": user_id,
+            "token_hash": token_hash,
+            "expires_at": expires_at,
+            "revoked_at": None,
+            "created_at": now,
+            "created_ip": created_ip,
+            "user_agent": user_agent,
+        }
+
+    def auth_get_refresh_token(self, token_id: str) -> dict[str, Any] | None:
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id, user_id, token_hash, expires_at, revoked_at, created_at, created_ip, user_agent "
+                    "FROM refresh_tokens WHERE id = %s",
+                    (token_id,),
+                )
+                row = cur.fetchone()
+        if not row:
+            return None
+        return {
+            "id": str(row[0]),
+            "user_id": str(row[1]),
+            "token_hash": str(row[2]),
+            "expires_at": float(row[3]),
+            "revoked_at": float(row[4]) if row[4] is not None else None,
+            "created_at": float(row[5]),
+            "created_ip": row[6],
+            "user_agent": row[7],
+        }
+
+    def auth_get_refresh_token_by_hash(self, token_hash: str) -> dict[str, Any] | None:
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id, user_id, token_hash, expires_at, revoked_at, created_at, created_ip, user_agent "
+                    "FROM refresh_tokens WHERE token_hash = %s",
+                    (token_hash,),
+                )
+                row = cur.fetchone()
+        if not row:
+            return None
+        return {
+            "id": str(row[0]),
+            "user_id": str(row[1]),
+            "token_hash": str(row[2]),
+            "expires_at": float(row[3]),
+            "revoked_at": float(row[4]) if row[4] is not None else None,
+            "created_at": float(row[5]),
+            "created_ip": row[6],
+            "user_agent": row[7],
+        }
+
+    def auth_is_refresh_token_active(self, token_id: str) -> bool:
+        now = time.time()
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT 1 FROM refresh_tokens WHERE id = %s AND revoked_at IS NULL AND expires_at > %s",
+                    (token_id, now),
+                )
+                row = cur.fetchone()
+                return row is not None
+
+    def auth_revoke_refresh_token(self, token_id: str) -> bool:
+        now = time.time()
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE refresh_tokens SET revoked_at = %s WHERE id = %s AND revoked_at IS NULL",
+                    (now, token_id),
+                )
+                return cur.rowcount > 0
+
+    def auth_revoke_all_refresh_tokens(self, *, user_id: str) -> int:
+        now = time.time()
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE refresh_tokens SET revoked_at = %s WHERE user_id = %s AND revoked_at IS NULL",
+                    (now, user_id),
+                )
+                return int(cur.rowcount)
+
+    def auth_create_email_verification_token(
+        self,
+        *,
+        user_id: str,
+        token_hash: str,
+        expires_at: float,
+    ) -> dict[str, Any]:
+        token_id = str(uuid.uuid4())
+        now = time.time()
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO email_verification_tokens(id, user_id, token_hash, expires_at, used_at, created_at) "
+                    "VALUES (%s, %s, %s, %s, %s, %s)",
+                    (token_id, user_id, token_hash, expires_at, None, now),
+                )
+        return {
+            "id": token_id,
+            "user_id": user_id,
+            "token_hash": token_hash,
+            "expires_at": expires_at,
+            "used_at": None,
+            "created_at": now,
+        }
+
+    def auth_consume_email_verification_token(self, *, token_hash: str) -> dict[str, Any] | None:
+        now = time.time()
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id, user_id, token_hash, expires_at, used_at, created_at "
+                    "FROM email_verification_tokens WHERE token_hash = %s",
+                    (token_hash,),
+                )
+                row = cur.fetchone()
+                if not row:
+                    return None
+
+                expires_at = float(row[3])
+                used_at = row[4]
+                if used_at is not None or expires_at <= now:
+                    return None
+
+                cur.execute(
+                    "UPDATE email_verification_tokens SET used_at = %s WHERE id = %s",
+                    (now, row[0]),
+                )
+
+        return {
+            "id": str(row[0]),
+            "user_id": str(row[1]),
+            "token_hash": str(row[2]),
+            "expires_at": float(row[3]),
+            "used_at": now,
+            "created_at": float(row[5]),
+        }
+
+    def auth_create_password_reset_token(
+        self,
+        *,
+        user_id: str,
+        token_hash: str,
+        expires_at: float,
+    ) -> dict[str, Any]:
+        token_id = str(uuid.uuid4())
+        now = time.time()
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO password_reset_tokens(id, user_id, token_hash, expires_at, used_at, created_at) "
+                    "VALUES (%s, %s, %s, %s, %s, %s)",
+                    (token_id, user_id, token_hash, expires_at, None, now),
+                )
+        return {
+            "id": token_id,
+            "user_id": user_id,
+            "token_hash": token_hash,
+            "expires_at": expires_at,
+            "used_at": None,
+            "created_at": now,
+        }
+
+    def auth_consume_password_reset_token(self, *, token_hash: str) -> dict[str, Any] | None:
+        now = time.time()
+        with self._conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT id, user_id, token_hash, expires_at, used_at, created_at "
+                    "FROM password_reset_tokens WHERE token_hash = %s",
+                    (token_hash,),
+                )
+                row = cur.fetchone()
+                if not row:
+                    return None
+
+                expires_at = float(row[3])
+                used_at = row[4]
+                if used_at is not None or expires_at <= now:
+                    return None
+
+                cur.execute(
+                    "UPDATE password_reset_tokens SET used_at = %s WHERE id = %s",
+                    (now, row[0]),
+                )
+
+        return {
+            "id": str(row[0]),
+            "user_id": str(row[1]),
+            "token_hash": str(row[2]),
+            "expires_at": float(row[3]),
+            "used_at": now,
+            "created_at": float(row[5]),
+        }
