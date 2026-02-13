@@ -4,7 +4,6 @@
 export * from "./common";
 
 // Domain-specific types
-export * from "./solver";
 export * from "./question";
 export * from "./research";
 export * from "./chat";
