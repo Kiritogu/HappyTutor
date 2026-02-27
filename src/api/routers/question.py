@@ -23,7 +23,6 @@ from src.logging import get_logger
 from src.services.config import load_config_with_main
 from src.services.llm.config import get_llm_config
 from src.services.settings.interface_settings import get_ui_language
-from langfuse.langchain import CallbackHandler
 # Setup module logger with unified logging system (from config)
 project_root = Path(__file__).parent.parent.parent.parent
 config = load_config_with_main("question_config.yaml", project_root)
@@ -35,7 +34,6 @@ router = APIRouter()
 # Output directory for mimic mode - use data/user/question
 PROJECT_ROOT = Path(__file__).parent.parent.parent.parent
 MIMIC_OUTPUT_DIR = PROJECT_ROOT / "data" / "user" / "question" / "mimic_papers"
-langfuse_handler = CallbackHandler()
 
 
 def _get_websocket_authorization(websocket: WebSocket) -> str | None:
@@ -515,7 +513,7 @@ async def _run_langgraph_generation(
     result = await graph.ainvoke(
         initial_state,
         config={"configurable": {"thread_id": task_id, "ws_callback": ws_callback},
-                "callbacks": [langfuse_handler]},
+                "callbacks": []},
     )
 
     # Extract summary from graph result

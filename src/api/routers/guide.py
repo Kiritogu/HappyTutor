@@ -26,13 +26,7 @@ from src.logging import get_logger
 from src.services.config import load_config_with_main
 from src.services.settings.interface_settings import get_ui_language
 
-# Langfuse integration
-from langfuse.langchain import CallbackHandler
-
 router = APIRouter()
-
-# Initialize Langfuse handler
-langfuse_handler = CallbackHandler()
 
 # Initialize logger with config
 project_root = Path(__file__).parent.parent.parent.parent
@@ -565,7 +559,7 @@ async def _run_interaction_langgraph(
     # Build config with optional ws_callback and Langfuse tracing
     run_config = {
         "configurable": {"thread_id": session_id, "language": language},
-        "callbacks": [langfuse_handler],
+        "callbacks": [],
     }
     if ws_callback:
         run_config["configurable"]["ws_callback"] = ws_callback

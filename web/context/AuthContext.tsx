@@ -57,12 +57,78 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [accessToken, setAccessToken] = useState<string | null>(null);
 
+  const clearSessionRef = React.useRef<() => void>(() => {});
+  const applySessionRef = React.useRef<(s: AuthSession) => void>(() => {});
+
   useEffect(() => {
     if (typeof window === "undefined") {
       return;
     }
 
     const originalFetch = window.fetch.bind(window);
+
+    const AUTH_ENDPOINTS = ["/auth/login", "/auth/register", "/auth/refresh", "/auth/logout"];
+
+    function isAuthEndpoint(url: string): boolean {
+      return AUTH_ENDPOINTS.some((ep) => url.includes(ep));
+    }
+
+    let refreshPromise: Promise<string | null> | null = null;
+
+    async function tryRefreshToken(): Promise<string | null> {
+      const refreshToken = getRefreshToken();
+      if (!refreshToken) {
+        return null;
+      }
+
+      try {
+        const response = await originalFetch(apiUrl("/api/v1/auth/refresh"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ refresh_token: refreshToken }),
+        });
+
+        if (!response.ok) {
+          return null;
+        }
+
+        const session = (await response.json()) as AuthSession;
+        applySessionRef.current(session);
+        return session.access_token;
+      } catch {
+        return null;
+      }
+    }
+
+    function refreshOnce(): Promise<string | null> {
+      if (!refreshPromise) {
+        refreshPromise = tryRefreshToken().finally(() => {
+          refreshPromise = null;
+        });
+      }
+      return refreshPromise;
+    }
+
+    function doFetch(
+      input: RequestInfo | URL,
+      init: RequestInit | undefined,
+      token: string,
+    ): Promise<Response> {
+      if (input instanceof Request) {
+        const request = new Request(input, init);
+        if (!request.headers.has("Authorization")) {
+          request.headers.set("Authorization", `Bearer ${token}`);
+        }
+        return originalFetch(request);
+      }
+
+      const headers = new Headers(init?.headers);
+      if (!headers.has("Authorization")) {
+        headers.set("Authorization", `Bearer ${token}`);
+      }
+
+      return originalFetch(input, { ...init, headers });
+    }
 
     window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
       const token = getAccessToken();
@@ -81,23 +147,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return originalFetch(input, init);
       }
 
-      if (input instanceof Request) {
-        const request = new Request(input, init);
-        if (!request.headers.has("Authorization")) {
-          request.headers.set("Authorization", `Bearer ${token}`);
-        }
-        return originalFetch(request);
+      if (isAuthEndpoint(url)) {
+        return originalFetch(input, init);
       }
 
-      const headers = new Headers(init?.headers);
-      if (!headers.has("Authorization")) {
-        headers.set("Authorization", `Bearer ${token}`);
+      let response: Response;
+      try {
+        response = await doFetch(input, init, token);
+      } catch (err) {
+        clearSessionRef.current();
+        throw err;
       }
 
-      return originalFetch(input, {
-        ...init,
-        headers,
-      });
+      if (response.status !== 401) {
+        return response;
+      }
+
+      const newToken = await refreshOnce();
+      if (newToken) {
+        return doFetch(input, init, newToken);
+      }
+
+      clearSessionRef.current();
+      return response;
     };
 
     return () => {
@@ -116,6 +188,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setAccessToken(null);
     setUser(null);
   }, []);
+
+  useEffect(() => {
+    clearSessionRef.current = clearSession;
+    applySessionRef.current = applySession;
+  }, [clearSession, applySession]);
 
   const refresh = useCallback(async (): Promise<AuthSession | null> => {
     const refreshToken = getRefreshToken();

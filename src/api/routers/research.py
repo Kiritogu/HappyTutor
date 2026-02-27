@@ -26,9 +26,6 @@ if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8")
 
 router = APIRouter()
-from langfuse.langchain import CallbackHandler
-
-langfuse_handler = CallbackHandler()
 
 def _get_websocket_authorization(websocket: WebSocket) -> str | None:
     authorization = websocket.headers.get("authorization")
@@ -335,7 +332,7 @@ async def websocket_research_run(websocket: WebSocket):
                     "ws_callback": ws_callback,
                     "progress_callback": progress_callback,
                 },
-                "callbacks": [langfuse_handler]
+                "callbacks": []
             },
         )
 

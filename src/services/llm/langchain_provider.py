@@ -47,26 +47,6 @@ logger = get_logger("LangChain")
 # LangChain imports - lazy loaded to handle optional dependency
 _langchain_available: Optional[bool] = None
 
-# Langfuse callback handler - lazy loaded
-_langfuse_handler: Optional[Any] = None
-_langfuse_checked: bool = False
-
-
-def _get_langfuse_handler():
-    """Lazily initialize and return the Langfuse callback handler."""
-    global _langfuse_handler, _langfuse_checked
-    if _langfuse_checked:
-        return _langfuse_handler
-    _langfuse_checked = True
-    try:
-        from langfuse.langchain import CallbackHandler
-
-        _langfuse_handler = CallbackHandler()
-        logger.info("Langfuse tracing enabled")
-    except Exception:
-        _langfuse_handler = None
-    return _langfuse_handler
-
 
 def _check_langchain_available() -> bool:
     """Check if LangChain packages are available."""
@@ -409,10 +389,7 @@ class LangChainProvider:
                 # LangChain's ChatAnthropic handles this internally
                 pass
 
-            # Invoke LLM with Langfuse tracing
-            langfuse_cb = _get_langfuse_handler()
-            invoke_config = {"callbacks": [langfuse_cb]} if langfuse_cb else {}
-            response = await llm.ainvoke(msg_list, config=invoke_config, **invoke_kwargs)
+            response = await llm.ainvoke(msg_list, **invoke_kwargs)
 
             # Extract content
             content = response.content if hasattr(response, "content") else str(response)
@@ -517,10 +494,7 @@ class LangChainProvider:
             in_thinking_block = False
             thinking_buffer = ""
 
-            # Stream response with Langfuse tracing
-            langfuse_cb = _get_langfuse_handler()
-            stream_config = {"callbacks": [langfuse_cb]} if langfuse_cb else {}
-            async for chunk in llm.astream(msg_list, config=stream_config):
+            async for chunk in llm.astream(msg_list):
                 content = chunk.content if hasattr(chunk, "content") else str(chunk)
 
                 if not content:

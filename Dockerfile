@@ -17,6 +17,10 @@
 # ============================================
 FROM node:22-slim AS frontend-builder
 
+# 使用阿里云 Debian 镜像源
+RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources \
+    && sed -i 's/security.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources
+
 WORKDIR /app/web
 
 # Accept build argument for backend port
@@ -26,7 +30,7 @@ ARG BACKEND_PORT=8001
 COPY web/package.json web/package-lock.json* ./
 
 # Install dependencies
-RUN npm ci --legacy-peer-deps
+RUN npm ci --legacy-peer-deps --registry=https://registry.npmmirror.com
 
 # Copy frontend source code
 COPY web/ ./
@@ -44,6 +48,10 @@ RUN npm run build
 # ============================================
 FROM python:3.11-slim AS python-base
 
+# 使用阿里云 Debian 镜像源
+RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources \
+    && sed -i 's/security.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources
+
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -55,7 +63,6 @@ WORKDIR /app
 
 # Install system dependencies
 # Note: libgl1 and libglib2.0-0 are required for OpenCV (used by mineru)
-# Rust is required for building tiktoken and other packages without pre-built wheels
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     git \
@@ -67,21 +74,33 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxrender1 \
     pkg-config \
     libssl-dev \
-    && rm -rf /var/lib/apt/lists/* \
-    && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Rust using rustup with Aliyun mirror
+# Configure Aliyun mirror for rustup
+ENV RUSTUP_DIST_SERVER=https://mirrors.aliyun.com/rust-static \
+    RUSTUP_UPDATE_ROOT=https://mirrors.aliyun.com/rust-static/rustup
+
+# Download and install rustup using Aliyun mirror
+RUN curl --proto '=https' --tlsv1.2 -sSf https://mirrors.aliyun.com/rust-static/rustup/rustup-init.sh | sh -s -- -y --default-toolchain stable
 
 # Add Rust to PATH
 ENV PATH="/root/.cargo/bin:${PATH}"
 
 # Copy requirements and install Python dependencies
+# 使用阿里云 pip 镜像源
 COPY requirements.txt ./
-RUN pip install --upgrade pip && \
-    pip install -r requirements.txt
+RUN pip install --upgrade pip -i https://mirrors.aliyun.com/pypi/simple/ && \
+    pip install -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/
 
 # ============================================
 # Stage 3: Production Image
 # ============================================
 FROM python:3.11-slim AS production
+
+# 使用阿里云 Debian 镜像源
+RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources \
+    && sed -i 's/security.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources
 
 # Labels
 LABEL maintainer="DeepTutor Team" \
@@ -317,6 +336,10 @@ ENTRYPOINT ["/app/entrypoint.sh"]
 # Stage 4: Development Image (Optional)
 # ============================================
 FROM production AS development
+
+# 使用阿里云 Debian 镜像源
+RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources \
+    && sed -i 's/security.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources
 
 # Install development tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
