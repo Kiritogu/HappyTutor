@@ -58,7 +58,7 @@ arxiv==2.4.0
 # ============================================
 # Scientific computing (for RAG and code execution)
 # ============================================
-numpy==1.26.4              # NumPy <2.0 for compatibility
+numpy==2.2.6              # NumPy <2.0 for compatibility
 # matplotlib==3.10.8       # Uncomment if needed for plotting
 # scipy==1.15.3            # Uncomment if needed for scientific computing
 # pandas==2.3.3            # Uncomment if needed for data analysis
