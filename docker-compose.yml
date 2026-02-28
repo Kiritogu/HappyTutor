@@ -1,102 +1,71 @@
-# ============================================
-# DeepTutor Docker Compose Configuration
-# ============================================
-# This file provides orchestration for DeepTutor services
-#
+# ==============================================================
+# DeepTutor - Docker Compose Production Configuration
+# ==============================================================
 # Usage:
-#   Production:  docker compose up -d
-#   Development: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
-#   Build only:  docker compose build
-#
-# Prerequisites:
-#   1. Copy .env.example to .env and configure your API keys
-#   2. Optionally customize config/main.yaml and config/agents.yaml
-# ============================================
+#   1. Configure .env file (see .env.example)
+#   2. Set NEXT_PUBLIC_API_BASE=http://your-server-ip in .env
+#   3. Run: docker compose up -d
+# ==============================================================
 
 services:
-  # ============================================
-  # All-in-One DeepTutor Service
-  # ============================================
-  deeptutor:
+  # ---------- PostgreSQL Database ----------
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DB:-deeptutor}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ---------- FastAPI Backend ----------
+  backend:
     build:
       context: .
       dockerfile: Dockerfile
-      target: production
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # Override DSN to use Docker internal hostname "postgres" instead of "localhost"
+      DEEPTUTOR_POSTGRES_DSN: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-deeptutor}
+      DEEPTUTOR_STORAGE_BACKEND: postgres
+      DEEPTUTOR_STORAGE_AUTO_MIGRATE: "true"
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ---------- Next.js Frontend ----------
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
       args:
-        # Pass backend port at build time for Next.js static optimization
-        - BACKEND_PORT=${BACKEND_PORT:-8001}
-    container_name: deeptutor
+        # This URL is baked into the frontend at build time
+        # It must be the public URL that browsers use to reach the API
+        NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-http://localhost}
+    restart: unless-stopped
+    depends_on:
+      - backend
+
+  # ---------- Nginx Reverse Proxy ----------
+  nginx:
+    image: nginx:alpine
     restart: unless-stopped
     ports:
-      - "${BACKEND_PORT:-8001}:${BACKEND_PORT:-8001}"
-      - "${FRONTEND_PORT:-3782}:${FRONTEND_PORT:-3782}"
-
-    # Load environment variables from .env file
-    env_file:
-      - .env
-
-    environment:
-      # LLM Configuration (Required)
-      - LLM_BINDING=${LLM_BINDING:-openai}
-      - LLM_MODEL=${LLM_MODEL}
-      - LLM_API_KEY=${LLM_API_KEY}
-      - LLM_HOST=${LLM_HOST}
-      - DISABLE_SSL_VERIFY=${DISABLE_SSL_VERIFY:-false}
-      # Embedding Configuration (Required for Knowledge Base)
-      - EMBEDDING_BINDING=${EMBEDDING_BINDING:-openai}
-      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-text-embedding-3-large}
-      - EMBEDDING_API_KEY=${EMBEDDING_API_KEY}
-      - EMBEDDING_HOST=${EMBEDDING_HOST}
-      - EMBEDDING_DIMENSION=${EMBEDDING_DIMENSION:-3072}
-      - EMBEDDING_MAX_TOKENS=${EMBEDDING_MAX_TOKENS:-8192}
-      # TTS Configuration (Optional)
-      - TTS_MODEL=${TTS_MODEL:-}
-      - TTS_API_KEY=${TTS_API_KEY:-}
-      - TTS_URL=${TTS_URL:-}
-      - TTS_VOICE=${TTS_VOICE:-alloy}
-      # Web Search Configuration (Optional)
-      - SEARCH_PROVIDER=${SEARCH_PROVIDER:-perplexity}
-      - SEARCH_API_KEY=${SEARCH_API_KEY:-}
-      # Logging: Configure in config/main.yaml -> logging.level
-      # ============================================
-      # Service Ports Configuration
-      # ============================================
-      # Backend API port (default: 8001)
-      - BACKEND_PORT=${BACKEND_PORT:-8001}
-      # Frontend web port (default: 3782)
-      - FRONTEND_PORT=${FRONTEND_PORT:-3782}
-      # ============================================
-      # API URL Configuration (Important for Cloud Deployment)
-      # ============================================
-      # For CLOUD/REMOTE deployment: Set this to your server's public URL
-      # Example: https://your-server.com:8001 or https://api.yourdomain.com
-      # If not set, defaults to http://localhost:${BACKEND_PORT} (only works locally)
-      - NEXT_PUBLIC_API_BASE_EXTERNAL=${NEXT_PUBLIC_API_BASE_EXTERNAL:-}
-      # Alternative: Direct API base URL (same priority as NEXT_PUBLIC_API_BASE_EXTERNAL)
-      - NEXT_PUBLIC_API_BASE=${NEXT_PUBLIC_API_BASE:-}
-
+      - "80:80"
     volumes:
-      # Mount local config directory (read-only)
-      - ./config:/app/config:ro
-      # Mount local data directory for persistence (read-write)
-      # This ensures all outputs go to your local ./data directory
-      - ./data/user:/app/data/user
-      - ./data/db:/app/data/db
-      - ./data/knowledge_bases:/app/data/knowledge_bases
+      - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - backend
+      - frontend
 
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:${BACKEND_PORT:-8001}/"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
-
-    networks:
-      - deeptutor-network
-
-# ============================================
-# Networks
-# ============================================
-networks:
-  deeptutor-network:
-    driver: bridge
+volumes:
+  postgres_data:

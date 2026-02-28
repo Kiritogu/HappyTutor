@@ -556,7 +556,7 @@ async def _run_interaction_langgraph(
         "bug_description": bug_description,
     }
 
-    # Build config with optional ws_callback and Langfuse tracing
+    # Build config with optional ws_callback
     run_config = {
         "configurable": {"thread_id": session_id, "language": language},
         "callbacks": [],

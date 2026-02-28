@@ -1,6 +1,10 @@
 /** @type {import('next').NextConfig} */
 
 const nextConfig = {
+  // Enable standalone output for optimized Docker deployment
+  // This creates a self-contained build that doesn't need node_modules at runtime
+  output: "standalone",
+
   // Move dev indicator to bottom-right corner
   devIndicators: {
     position: "bottom-right",

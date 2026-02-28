@@ -3,105 +3,101 @@
 # ============================================
 # Python >= 3.10 required
 # Install: pip install -r requirements.txt
+# Versions pinned from conda env (2026-02-28)
 
 # ============================================
 # Core dependencies
 # ============================================
-python-dotenv>=1.0.0
-PyYAML>=6.0
-tiktoken>=0.5.0
-jinja2>=3.1.0              # Template engine for search consolidation
+python-dotenv==1.2.1
+PyYAML==6.0.3
+tiktoken==0.12.0
+jinja2==3.1.6              # Template engine for search consolidation
 
 # ============================================
 # HTTP and API clients
 # ============================================
-requests>=2.32.2
-openai>=1.30.0
-anthropic>=0.30.0          # Anthropic Claude API
-perplexityai>=0.1.0
-dashscope>=1.14.0
-aiohttp>=3.9.4
-httpx>=0.27.0
-urllib3>=2.2.1
+requests==2.32.5
+openai==1.109.1
+anthropic==0.76.0          # Anthropic Claude API
+perplexityai==0.22.3
+dashscope==1.25.7
+aiohttp==3.13.3
+httpx==0.28.1
+urllib3==2.6.3
 
 # ============================================
 # Async support
 # ============================================
-nest_asyncio>=1.5.8
-tenacity>=8.0.0
+nest-asyncio==1.6.0
+tenacity==8.5.0
 
 # ============================================
 # Web framework and server
 # ============================================
-fastapi>=0.100.0
-uvicorn[standard]>=0.24.0
-websockets>=12.0
-python-multipart>=0.0.6
-pydantic>=2.0.0
+fastapi==0.128.0
+uvicorn[standard]==0.40.0
+websockets==15.0.1
+python-multipart==0.0.21
+pydantic==2.11.10
 
 # ============================================
 # RAG and knowledge base
 # ============================================
-raganything>=0.1.0
-docling>=2.31.0                # Document parser for Office/HTML (alternative to MinerU)
+raganything==1.2.8
 
 # ============================================
 # LlamaIndex
 # ============================================
-llama-index>=0.14.12
+llama-index==0.14.12
 
 # ============================================
 # Academic and research tools
 # ============================================
-arxiv>=2.0.0
+arxiv==2.4.0
 
 # ============================================
 # Scientific computing (for RAG and code execution)
 # ============================================
-numpy>=1.24.0,<2.0.0  # NumPy 1.24+ required for array API, <2.0 for compatibility
-# matplotlib>=3.7.0  # Uncomment if needed for plotting
-# scipy>=1.11.0      # Uncomment if needed for scientific computing
-# pandas>=2.0.0      # Uncomment if needed for data analysis
+numpy==1.26.4              # NumPy <2.0 for compatibility
+# matplotlib==3.10.8       # Uncomment if needed for plotting
+# scipy==1.15.3            # Uncomment if needed for scientific computing
+# pandas==2.3.3            # Uncomment if needed for data analysis
 
 # PDF parsing
-PyMuPDF>=1.26.0      # For PDF text extraction (fast and reliable)
+PyMuPDF==1.26.7            # For PDF text extraction (fast and reliable)
 
 # Vector search (optional but recommended for llamaindex pipeline)
-# faiss-cpu>=1.7.4   # Uncomment for CPU-only FAISS support (faster search)
-# faiss-gpu>=1.7.4   # Uncomment if you have GPU and want GPU acceleration
+# faiss-cpu>=1.7.4         # Uncomment for CPU-only FAISS support (faster search)
+# faiss-gpu>=1.7.4         # Uncomment if you have GPU and want GPU acceleration
 
 # ============================================
-# Development and testing tools
+# Development and testing tools (dev only, not needed in production)
+# Install separately: pip install pytest pre-commit safety bandit
 # ============================================
-pytest>=7.0.0              # Testing framework
-pre-commit>=3.0.0
-safety<3.0.0               # Pin to stable 2.x version, 3.0.0 is broken
-bandit>=1.8.0
+# pytest==8.4.2
+# pre-commit==4.5.1
+# safety==2.3.5
+# bandit==1.9.2
 
 # ============================================
 # LangChain LLM Provider
 # ============================================
-langchain-core>=0.3.0          # Core LangChain abstractions
-langchain-openai>=0.3.0        # OpenAI integration (ChatOpenAI)
-langchain-anthropic>=0.3.0     # Anthropic integration (ChatAnthropic)
-langchain-community>=0.3.0     # Community integrations (SQLiteCache)
-langchain-ollama>=0.2.0        # Ollama integration (ChatOllama)
+langchain-core==0.3.83         # Core LangChain abstractions
+langchain-openai==0.3.0        # OpenAI integration (ChatOpenAI)
+langchain-anthropic==0.3.22    # Anthropic integration (ChatAnthropic)
+langchain-community==0.3.31    # Community integrations (SQLiteCache)
+langchain-ollama==0.3.10       # Ollama integration (ChatOllama)
 
 # ============================================
 # LangGraph (workflow orchestration)
 # ============================================
-langgraph>=0.2.0
-langgraph-checkpoint-sqlite>=2.0.0
-
-# ============================================
-# Observability / Tracing
-# ============================================
-langfuse>=2.0.0
+langgraph==1.0.1
+langgraph-checkpoint-sqlite==2.0.0
 
 # ============================================
 # Database / Storage (Optional)
 # ============================================
-psycopg2-binary>=2.9.9
-passlib[argon2]>=1.7.4
-PyJWT>=2.8.0
-email-validator>=2.2.0
+psycopg2-binary==2.9.11
+passlib[argon2]==1.7.4
+PyJWT==2.10.1
+email-validator==2.3.0
