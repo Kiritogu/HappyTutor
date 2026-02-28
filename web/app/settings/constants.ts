@@ -35,7 +35,6 @@ export const PROVIDER_OPTIONS: Record<ConfigType, string[]> = {
     "ollama",
     "lm_studio",
   ],
-  tts: ["openai", "azure_openai"],
   search: ["perplexity", "tavily", "exa", "jina", "serper", "baidu"],
 };
 
@@ -50,22 +49,11 @@ export const LOCAL_PROVIDER_URLS: Record<string, string> = {
   llama_cpp: "http://localhost:8080/v1",
 };
 
-// Voice options for TTS
-export const VOICE_OPTIONS = [
-  "alloy",
-  "echo",
-  "fable",
-  "onyx",
-  "nova",
-  "shimmer",
-];
-
 // Helper functions to get env var names
 export function getEnvVarForBaseUrl(configType: ConfigType): string {
   const mapping: Record<ConfigType, string> = {
     llm: "LLM_HOST",
     embedding: "EMBEDDING_HOST",
-    tts: "TTS_URL",
     search: "SEARCH_PROVIDER",
   };
   return mapping[configType];
@@ -75,7 +63,6 @@ export function getEnvVarForApiKey(configType: ConfigType): string {
   const mapping: Record<ConfigType, string> = {
     llm: "LLM_API_KEY",
     embedding: "EMBEDDING_API_KEY",
-    tts: "TTS_API_KEY",
     search: "SEARCH_API_KEY",
   };
   return mapping[configType];

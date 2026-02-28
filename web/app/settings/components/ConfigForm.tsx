@@ -16,7 +16,6 @@ import {
   PROVIDER_OPTIONS,
   LOCAL_PROVIDERS,
   LOCAL_PROVIDER_URLS,
-  VOICE_OPTIONS,
   getEnvVarForBaseUrl,
   getEnvVarForApiKey,
 } from "../constants";
@@ -24,7 +23,6 @@ import {
 interface ConfigFormProps {
   configType: ConfigType;
   showDimensions: boolean;
-  showVoice: boolean;
   isSearchConfig: boolean;
   editConfig?: ConfigItem | null;
   t: (key: string) => string;
@@ -35,7 +33,6 @@ interface ConfigFormProps {
 export default function ConfigForm({
   configType,
   showDimensions,
-  showVoice,
   isSearchConfig,
   editConfig,
   t,
@@ -86,7 +83,6 @@ export default function ConfigForm({
   const [showApiKey, setShowApiKey] = useState(false);
   const [model, setModel] = useState(editConfig?.model || "");
   const [dimensions, setDimensions] = useState(editConfig?.dimensions || 3072);
-  const [voice, setVoice] = useState(editConfig?.voice || "alloy");
 
   const isLocalProvider = LOCAL_PROVIDERS.includes(provider);
 
@@ -153,7 +149,6 @@ export default function ConfigForm({
           ...(configType === "embedding"
             ? { dimensions: Number(dimensions) }
             : {}),
-          ...(configType === "tts" && voice ? { voice } : {}),
         }),
       });
       const data = await res.json();
@@ -198,10 +193,6 @@ export default function ConfigForm({
 
       if (showDimensions) {
         payload.dimensions = dimensions;
-      }
-
-      if (showVoice) {
-        payload.voice = voice;
       }
 
       const url = isEditMode
@@ -447,28 +438,6 @@ export default function ConfigForm({
           </div>
         )}
 
-        {/* Voice (TTS only) */}
-        {showVoice && (
-          <div>
-            <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1">
-              {t("Voice")}
-            </label>
-            <div className="relative">
-              <select
-                value={voice}
-                onChange={(e) => setVoice(e.target.value)}
-                className="w-full px-3 py-2 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 rounded-lg text-sm appearance-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              >
-                {VOICE_OPTIONS.map((v) => (
-                  <option key={v} value={v}>
-                    {v}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Actions */}

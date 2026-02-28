@@ -448,7 +448,7 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
   const [uiSettings, setUiSettings] = useState<{
     theme: "light" | "dark";
     language: "en" | "zh";
-  }>({ theme: "light", language: "en" });
+  }>({ theme: "light", language: "zh" });
 
   const [isInitialized, setIsInitialized] = useState(false);
 
@@ -459,7 +459,7 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
       if (res.ok) {
         const data = await res.json();
         const serverTheme = data.ui?.theme || "light";
-        const serverLanguage = data.ui?.language || "en";
+        const serverLanguage = data.ui?.language || "zh";
         setUiSettings({
           theme: serverTheme,
           language: serverLanguage,
@@ -482,8 +482,8 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
     const storedTheme = getStoredTheme();
     const storedLanguage =
       typeof window !== "undefined"
-        ? (localStorage.getItem(LANGUAGE_STORAGE_KEY) as "en" | "zh") || "en"
-        : "en";
+        ? (localStorage.getItem(LANGUAGE_STORAGE_KEY) as "en" | "zh") || "zh"
+        : "zh";
 
     const themeToUse = storedTheme || "light";
     setUiSettings({

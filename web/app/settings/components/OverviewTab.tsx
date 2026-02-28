@@ -3,7 +3,6 @@
 import {
   Brain,
   Database,
-  Volume2,
   Search,
   Check,
   AlertCircle,
@@ -27,7 +26,6 @@ const services: {
 }[] = [
   { key: "llm", label: "LLM", icon: Brain, color: "purple" },
   { key: "embedding", label: "Embedding", icon: Database, color: "indigo" },
-  { key: "tts", label: "TTS", icon: Volume2, color: "emerald" },
   { key: "search", label: "Search", icon: Search, color: "amber" },
 ];
 

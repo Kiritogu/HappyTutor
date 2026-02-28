@@ -5,7 +5,6 @@ import {
   Settings as SettingsIcon,
   Brain,
   Database,
-  Volume2,
   Search,
   Loader2,
   Sun,
@@ -86,7 +85,6 @@ export default function SettingsPage() {
       label: t("Embedding"),
       icon: <Database className="w-4 h-4" />,
     },
-    { id: "tts", label: t("TTS"), icon: <Volume2 className="w-4 h-4" /> },
     { id: "search", label: t("Search"), icon: <Search className="w-4 h-4" /> },
   ];
 
@@ -293,16 +291,6 @@ export default function SettingsPage() {
               description={t("Configure embedding model providers")}
               onUpdate={loadStatus}
               showDimensions
-              t={t}
-            />
-          )}
-          {activeTab === "tts" && (
-            <ConfigTab
-              configType="tts"
-              title={t("TTS Configuration")}
-              description={t("Configure text-to-speech providers")}
-              onUpdate={loadStatus}
-              showVoice
               t={t}
             />
           )}

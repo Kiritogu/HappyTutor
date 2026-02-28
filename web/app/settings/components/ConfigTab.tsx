@@ -12,7 +12,6 @@ interface ConfigTabProps {
   description: string;
   onUpdate: () => void;
   showDimensions?: boolean;
-  showVoice?: boolean;
   isSearchConfig?: boolean;
   t: (key: string) => string;
 }
@@ -23,7 +22,6 @@ export default function ConfigTab({
   description,
   onUpdate,
   showDimensions = false,
-  showVoice = false,
   isSearchConfig = false,
   t,
 }: ConfigTabProps) {
@@ -149,7 +147,6 @@ export default function ConfigTab({
         <ConfigForm
           configType={configType}
           showDimensions={showDimensions}
-          showVoice={showVoice}
           isSearchConfig={isSearchConfig}
           editConfig={editingConfig}
           t={t}
@@ -223,11 +220,6 @@ export default function ConfigTab({
                     {showDimensions && config.dimensions && (
                       <span>
                         {t("Dimensions")}: {config.dimensions}
-                      </span>
-                    )}
-                    {showVoice && config.voice && (
-                      <span>
-                        {t("Voice")}: {config.voice}
                       </span>
                     )}
                   </div>

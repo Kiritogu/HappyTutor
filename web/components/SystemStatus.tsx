@@ -7,7 +7,6 @@ import {
   Server,
   Brain,
   Database,
-  Volume2,
   Loader2,
   CheckCircle2,
   XCircle,
@@ -33,12 +32,6 @@ interface SystemStatusData {
     testable: boolean;
     error?: string;
   };
-  tts: {
-    status: string;
-    model: string | null;
-    testable: boolean;
-    error?: string;
-  };
 }
 
 interface TestResult {
@@ -49,7 +42,7 @@ interface TestResult {
   error?: string;
 }
 
-type ModelType = "llm" | "embeddings" | "tts";
+type ModelType = "llm" | "embeddings";
 
 export default function SystemStatus() {
   const { t } = useTranslation();
@@ -60,14 +53,12 @@ export default function SystemStatus() {
   const [testing, setTesting] = useState<Record<ModelType, boolean>>({
     llm: false,
     embeddings: false,
-    tts: false,
   });
   const [testResults, setTestResults] = useState<
     Record<ModelType, TestResult | null>
   >({
     llm: null,
     embeddings: null,
-    tts: null,
   });
 
   // Check backend connection status (auto-update every 30 seconds)
@@ -364,71 +355,6 @@ export default function SystemStatus() {
                 {testResults.embeddings.response_time_ms && (
                   <span className="text-slate-500 dark:text-slate-400 ml-1">
                     ({testResults.embeddings.response_time_ms}ms)
-                  </span>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* TTS Status */}
-          <div
-            className={`px-3 py-2.5 rounded-lg border text-sm transition-colors bg-slate-50 dark:bg-slate-800 border-slate-200 dark:border-slate-700`}
-          >
-            <div className="flex items-center justify-between mb-1.5">
-              <div className="flex items-center gap-2">
-                <Volume2 className="w-4 h-4 text-emerald-500 dark:text-emerald-400" />
-                <span className="font-medium text-slate-700 dark:text-slate-200">
-                  {t("TTS Model")}
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                {statusData.tts.status === "configured" && testResults.tts && (
-                  <span
-                    className={`text-xs ${testResults.tts.success ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}
-                  >
-                    {testResults.tts.success ? "✓" : "✗"}
-                  </span>
-                )}
-                {getStatusIcon(statusData.tts.status)}
-                <span
-                  className={`text-xs ${getStatusColor(statusData.tts.status)}`}
-                >
-                  {getStatusText(statusData.tts.status)}
-                </span>
-              </div>
-            </div>
-            {statusData.tts.model && (
-              <div className="text-xs text-slate-500 dark:text-slate-400 truncate mb-1.5">
-                {statusData.tts.model}
-              </div>
-            )}
-            {statusData.tts.testable && (
-              <button
-                onClick={() => testModelConnection("tts")}
-                disabled={testing.tts || !backendConnected}
-                className="w-full mt-1.5 px-3 py-1.5 text-xs bg-white dark:bg-slate-700 hover:bg-slate-100 dark:hover:bg-slate-600 border border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1.5"
-              >
-                {testing.tts ? (
-                  <>
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>{t("Testing...")}</span>
-                  </>
-                ) : (
-                  <>
-                    <RefreshCw className="w-3.5 h-3.5" />
-                    <span>{t("Test Connection")}</span>
-                  </>
-                )}
-              </button>
-            )}
-            {testResults.tts && (
-              <div
-                className={`mt-1.5 text-xs ${testResults.tts.success ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}
-              >
-                {testResults.tts.message}
-                {testResults.tts.response_time_ms && (
-                  <span className="text-slate-500 dark:text-slate-400 ml-1">
-                    ({testResults.tts.response_time_ms}ms)
                   </span>
                 )}
               </div>
