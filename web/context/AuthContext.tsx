@@ -155,7 +155,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         response = await doFetch(input, init, token);
       } catch (err) {
-        clearSessionRef.current();
+        // Network-level failures should not force logout; keep session and let caller handle error.
         throw err;
       }
 
@@ -349,3 +349,4 @@ export function useAuth(): AuthContextValue {
   }
   return context;
 }
+
