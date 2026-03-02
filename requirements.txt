@@ -8,7 +8,7 @@
 # ============================================
 # Core dependencies
 # ============================================
-python-dotenv==1.2.1
+python-dotenv==1.2.2
 PyYAML==6.0.3
 tiktoken==0.12.0
 jinja2==3.1.6              # Template engine for search consolidation
@@ -18,9 +18,9 @@ jinja2==3.1.6              # Template engine for search consolidation
 # ============================================
 requests==2.32.5
 openai==1.109.1
-anthropic==0.76.0          # Anthropic Claude API
-perplexityai==0.22.3
-dashscope==1.25.7
+anthropic==0.84.0          # Anthropic Claude API
+perplexityai==0.30.1
+dashscope==1.25.12
 aiohttp==3.13.3
 httpx==0.28.1
 urllib3==2.6.3
@@ -34,21 +34,21 @@ tenacity==8.5.0
 # ============================================
 # Web framework and server
 # ============================================
-fastapi==0.128.0
-uvicorn[standard]==0.40.0
+fastapi==0.135.1
+uvicorn[standard]==0.41.0
 websockets==15.0.1
-python-multipart==0.0.21
-pydantic==2.11.10
+python-multipart==0.0.22
+pydantic==2.12.5
 
 # ============================================
 # RAG and knowledge base
 # ============================================
-raganything==1.2.8
+raganything==1.2.9
 
 # ============================================
 # LlamaIndex
 # ============================================
-llama-index==0.14.12
+llama-index==0.14.15
 
 # ============================================
 # Academic and research tools
@@ -64,7 +64,7 @@ numpy==1.26.4              # NumPy <2.0 for compatibility
 # pandas==2.3.3            # Uncomment if needed for data analysis
 
 # PDF parsing
-PyMuPDF==1.26.7            # For PDF text extraction (fast and reliable)
+PyMuPDF==1.27.1            # For PDF text extraction (fast and reliable)
 
 # Vector search (optional but recommended for llamaindex pipeline)
 # faiss-cpu>=1.7.4         # Uncomment for CPU-only FAISS support (faster search)
@@ -85,13 +85,13 @@ PyMuPDF==1.26.7            # For PDF text extraction (fast and reliable)
 langchain-core==0.3.83         # Core LangChain abstractions
 langchain-openai==0.3.0        # OpenAI integration (ChatOpenAI)
 langchain-anthropic==0.3.22    # Anthropic integration (ChatAnthropic)
-langchain-community==0.3.31    # Community integrations (SQLiteCache)
+langchain-community==0.4.1    # Community integrations (SQLiteCache)
 langchain-ollama==0.3.10       # Ollama integration (ChatOllama)
 
 # ============================================
 # LangGraph (workflow orchestration)
 # ============================================
-langgraph==1.0.1
+langgraph==1.0.10
 langgraph-checkpoint-sqlite==2.0.0
 
 # ============================================
@@ -99,5 +99,5 @@ langgraph-checkpoint-sqlite==2.0.0
 # ============================================
 psycopg2-binary==2.9.11
 passlib[argon2]==1.7.4
-PyJWT==2.10.1
+PyJWT==2.11.0
 email-validator==2.3.0
