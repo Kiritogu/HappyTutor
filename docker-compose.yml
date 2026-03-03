@@ -20,11 +20,11 @@ services:
       # Persist user data and knowledge bases outside container
       - ./data:/app/data
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8001/api/v1/knowledge/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/api/v1/knowledge/health', timeout=5)"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 40s
+      start_period: 60s
 
   # ---------- Next.js Frontend ----------
   frontend:
