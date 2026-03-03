@@ -6,13 +6,12 @@ FROM python:3.10-slim
 WORKDIR /app
 
 # Switch apt sources to Alibaba Cloud mirror (China acceleration)
-# Replace both main repo and security repo in all possible source file formats
 RUN { sed -i 's|deb.debian.org|mirrors.aliyun.com|g; s|security.debian.org/debian-security|mirrors.aliyun.com/debian-security|g' /etc/apt/sources.list 2>/dev/null || true; } && \
     { sed -i 's|deb.debian.org|mirrors.aliyun.com|g; s|security.debian.org/debian-security|mirrors.aliyun.com/debian-security|g' /etc/apt/sources.list.d/debian.sources 2>/dev/null || true; }
 
 # Install system dependencies needed by some Python packages
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends build-essential && \
+    apt-get install -y --no-install-recommends build-essential libpq-dev && \
     rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies with Alibaba Cloud PyPI mirror

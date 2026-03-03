@@ -1,29 +1,14 @@
 # ==============================================================
-# DeepTutor - Docker Compose Production Configuration
+# DeepTutor - Docker Compose Production Configuration (Supabase)
 # ==============================================================
 # Usage:
-#   1. Configure .env file (see .env.example)
-#   2. Set NEXT_PUBLIC_API_BASE=http://your-server-ip in .env
-#   3. Run: docker compose up -d
+#   1. 在 Supabase 创建项目，获取 PostgreSQL 直连 URL
+#   2. 在 .env 中设置 DEEPTUTOR_POSTGRES_DSN 为 Supabase 连接串
+#   3. 在 .env 中设置 NEXT_PUBLIC_API_BASE=http://你的服务器IP
+#   4. 运行: docker compose up -d --build
 # ==============================================================
 
 services:
-  # ---------- PostgreSQL Database ----------
-  postgres:
-    image: postgres:16-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-      POSTGRES_DB: ${POSTGRES_DB:-deeptutor}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres}"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
   # ---------- FastAPI Backend ----------
   backend:
     build:
@@ -31,16 +16,15 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     env_file: .env
-    environment:
-      # Override DSN to use Docker internal hostname "postgres" instead of "localhost"
-      DEEPTUTOR_POSTGRES_DSN: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-deeptutor}
-      DEEPTUTOR_STORAGE_BACKEND: postgres
-      DEEPTUTOR_STORAGE_AUTO_MIGRATE: "true"
     volumes:
+      # Persist user data and knowledge bases outside container
       - ./data:/app/data
-    depends_on:
-      postgres:
-        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/api/v1/knowledge/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
   # ---------- Next.js Frontend ----------
   frontend:
@@ -48,12 +32,13 @@ services:
       context: .
       dockerfile: Dockerfile.web
       args:
-        # This URL is baked into the frontend at build time
-        # It must be the public URL that browsers use to reach the API
+        # This URL is baked into the frontend bundle at build time
+        # Must be the public URL that browsers use to reach the API
         NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-http://localhost}
     restart: unless-stopped
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
 
   # ---------- Nginx Reverse Proxy ----------
   nginx:
@@ -66,6 +51,3 @@ services:
     depends_on:
       - backend
       - frontend
-
-volumes:
-  postgres_data:
