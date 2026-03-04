@@ -214,6 +214,7 @@ export default function Sidebar() {
               </button>
             </div>
           </div>
+        </div>
       </div>
 
       {/* Navigation */}

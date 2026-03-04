@@ -10,6 +10,7 @@ import React, {
 } from "react";
 import { wsUrl, apiUrl, ensureFreshTokenForWs } from "@/lib/api";
 import { refreshAccessToken, getAccessToken } from "@/lib/auth";
+import { useAuth } from "@/context/AuthContext";
 import {
   initializeTheme,
   setTheme,
@@ -445,6 +446,8 @@ const DEFAULT_CHAT_STATE: ChatState = {
 };
 
 export function GlobalProvider({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated, isLoading: isAuthLoading } = useAuth();
+
   // --- UI Settings Logic ---
   const [uiSettings, setUiSettings] = useState<{
     theme: "light" | "dark";
@@ -453,7 +456,7 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
 
   const [isInitialized, setIsInitialized] = useState(false);
 
-  const refreshSettings = async () => {
+  const refreshSettings = useCallback(async () => {
     // Try to load from backend API first, fallback to localStorage
     try {
       const res = await fetch(apiUrl("/api/v1/settings"), {
@@ -494,7 +497,7 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
       language: storedLanguage,
     });
     setTheme(themeToUse);
-  };
+  }, []);
 
   const updateTheme = async (newTheme: "light" | "dark") => {
     // Update UI immediately
@@ -545,8 +548,8 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
       const initialTheme = initializeTheme();
       const storedLanguage =
         typeof window !== "undefined"
-          ? (localStorage.getItem(LANGUAGE_STORAGE_KEY) as "en" | "zh") || "en"
-          : "en";
+          ? (localStorage.getItem(LANGUAGE_STORAGE_KEY) as "en" | "zh") || "zh"
+          : "zh";
 
       setUiSettings({
         theme: initialTheme,
@@ -555,6 +558,12 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
       setIsInitialized(true);
     }
   }, [isInitialized]);
+
+  // Sync settings after auth state resolves, so login picks server-side language.
+  useEffect(() => {
+    if (!isInitialized || isAuthLoading) return;
+    refreshSettings();
+  }, [isAuthenticated, isAuthLoading, isInitialized, refreshSettings]);
 
   // --- Sidebar State ---
   const SIDEBAR_MIN_WIDTH = 64;
