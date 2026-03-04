@@ -144,30 +144,6 @@ def init_user_directories(project_root: Path | None = None) -> None:
             subdir_path.mkdir(parents=True, exist_ok=True)
             logger.success(f"Created: research/{subdir_name}/")
 
-        # Create user_history.json if it doesn't exist
-        user_history_file = user_data_dir / "user_history.json"
-        if not user_history_file.exists():
-            initial_history = {"version": "1.0", "created_at": None, "sessions": []}
-            try:
-                with open(user_history_file, "w", encoding="utf-8") as f:
-                    json.dump(initial_history, f, indent=2, ensure_ascii=False)
-                logger.success("Created: user_history.json")
-            except Exception as e:
-                logger.warning(f"Failed to create user_history.json: {e}")
-
-        # Create interface.json in settings folder if it doesn't exist
-        settings_dir = user_data_dir / "settings"
-        settings_dir.mkdir(parents=True, exist_ok=True)
-        interface_file = settings_dir / "interface.json"
-        if not interface_file.exists():
-            initial_settings = {"theme": "light", "language": "en", "output_language": "en"}
-            try:
-                with open(interface_file, "w", encoding="utf-8") as f:
-                    json.dump(initial_settings, f, indent=2, ensure_ascii=False)
-                logger.success("Created: settings/interface.json")
-            except Exception as e:
-                logger.warning(f"Failed to create settings/interface.json: {e}")
-
         logger.info("=" * 80)
         logger.success("User data directory initialization complete!")
         logger.info("=" * 80 + "\n")
@@ -188,28 +164,6 @@ def init_user_directories(project_root: Path | None = None) -> None:
         for subdir_name in research_subdirs:
             subdir_path = research_dir / subdir_name
             subdir_path.mkdir(parents=True, exist_ok=True)
-
-        # Ensure user_history.json exists
-        user_history_file = user_data_dir / "user_history.json"
-        if not user_history_file.exists():
-            initial_history = {"version": "1.0", "created_at": None, "sessions": []}
-            try:
-                with open(user_history_file, "w", encoding="utf-8") as f:
-                    json.dump(initial_history, f, indent=2, ensure_ascii=False)
-            except Exception:
-                pass  # Silent fail if file creation fails but directory exists
-
-        # Ensure interface.json exists in settings folder
-        settings_dir = user_data_dir / "settings"
-        settings_dir.mkdir(parents=True, exist_ok=True)
-        interface_file = settings_dir / "interface.json"
-        if not interface_file.exists():
-            initial_settings = {"theme": "light", "language": "en", "output_language": "en"}
-            try:
-                with open(interface_file, "w", encoding="utf-8") as f:
-                    json.dump(initial_settings, f, indent=2, ensure_ascii=False)
-            except Exception:
-                pass  # Silent fail if file creation fails but directory exists
 
 
 # ============================================================================
