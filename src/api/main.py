@@ -34,16 +34,14 @@ async def lifespan(app: FastAPI):
     # Execute on startup
     logger.info("Application startup")
 
-    # Initialize structured-data storage backend (SQLite / PostgreSQL) early.
-    # If configured, fail fast on misconfiguration to avoid silently falling back to JSON files.
+    # Initialize PostgreSQL storage backend early.
+    # Fail fast on misconfiguration.
     try:
-        from src.services.storage import get_storage_settings, get_user_db
+        from src.services.storage import get_user_db
 
         project_root = Path(__file__).parent.parent.parent
-        storage_settings = get_storage_settings(project_root=project_root)
-        if storage_settings.backend != "file":
-            get_user_db(project_root=project_root)
-            logger.info(f"Storage backend initialized: {storage_settings.backend}")
+        get_user_db(project_root=project_root)
+        logger.info("PostgreSQL storage backend initialized")
     except Exception as e:
         logger.error(f"Storage initialization failed: {e}")
         raise

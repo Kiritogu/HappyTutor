@@ -9,16 +9,12 @@ from src.services.auth.config import get_auth_settings
 from src.services.auth.password_service import PasswordService
 from src.services.auth.repository import PostgresAuthRepository
 from src.services.auth.token_service import TokenService
-from src.services.storage import get_storage_settings, get_user_db
+from src.services.storage import get_user_db
 
 
 @lru_cache(maxsize=1)
 def _build_auth_service() -> AuthService:
     settings = get_auth_settings()
-    storage_settings = get_storage_settings()
-    if storage_settings.backend != "postgres":
-        raise ValueError("Authentication requires postgres backend")
-
     db = get_user_db()
     repository = PostgresAuthRepository(db)
     password_service = PasswordService()
