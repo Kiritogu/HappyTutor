@@ -9,7 +9,6 @@ Supports multiple RAG providers with lazy loading:
 - llamaindex: Pure vector retrieval (load_index + insert + persist)
 - lightrag: Knowledge graph (LightRAG.ainsert, text-only)
 - raganything: Multimodal with MinerU parser
-- raganything_docling: Multimodal with Docling parser
 """
 
 import argparse
@@ -48,7 +47,6 @@ class DocumentAdder:
     - llamaindex: Only imports llama_index modules
     - lightrag: Only imports lightrag modules (no raganything)
     - raganything: Imports raganything with MinerU parser
-    - raganything_docling: Imports raganything with Docling parser
     """
 
     def __init__(
@@ -108,7 +106,7 @@ class DocumentAdder:
         data consistency and correct storage format.
 
         Returns:
-            Provider name (llamaindex, lightrag, raganything, raganything_docling)
+            Provider name (llamaindex, lightrag, raganything)
         """
         if self.metadata_file.exists():
             try:
@@ -219,7 +217,6 @@ class DocumentAdder:
         - llamaindex: Only imports llama_index
         - lightrag: Only imports lightrag (no raganything)
         - raganything: Imports raganything with MinerU
-        - raganything_docling: Imports raganything with Docling
         """
         if not new_files:
             return None
@@ -234,8 +231,6 @@ class DocumentAdder:
             return await self._process_lightrag(new_files)
         elif provider == "raganything":
             return await self._process_raganything(new_files, parser="mineru")
-        elif provider == "raganything_docling":
-            return await self._process_raganything(new_files, parser="docling")
         else:
             raise ValueError(f"Unknown RAG provider: {provider}")
 
@@ -436,9 +431,9 @@ class DocumentAdder:
         Lazy imports raganything only when needed.
 
         Args:
-            parser: "mineru" for RAGAnything, "docling" for RAGAnything Docling
+            parser: Parser to use (default: "mineru")
         """
-        parser_name = "MinerU" if parser == "mineru" else "Docling"
+        parser_name = "MinerU" if parser == "mineru" else parser
         logger.info(f"Using RAGAnything incremental add with {parser_name} parser...")
 
         # Lazy import raganything
@@ -691,15 +686,15 @@ class DocumentAdder:
         Clean up parser output directories after image migration.
 
         NOTE: Image migration and path updates are now handled by the RAG pipeline
-        (raganything.py / raganything_docling.py) BEFORE RAG insertion. This ensures
+        (raganything.py) BEFORE RAG insertion. This ensures
         RAG stores the correct canonical image paths (kb/images/) from the start.
 
         This method now only cleans up empty temporary parser output directories.
         """
         logger.info("Checking for leftover parser output directories...")
 
-        # Support both 'auto' (MinerU) and 'docling' parser output directories
-        parser_subdirs = ["auto", "docling"]
+        # Support 'auto' (MinerU) parser output directories
+        parser_subdirs = ["auto"]
         cleaned_count = 0
 
         for doc_dir in list(self.content_list_dir.glob("*")):

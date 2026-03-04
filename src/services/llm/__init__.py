@@ -18,14 +18,14 @@ LangChain  CloudProvider  LocalProvider
 (default)  (fallback)    (local LLMs)
 
 Providers:
-- LangChainProvider: Default provider with SQLite caching (recommended)
+- LangChainProvider: Default provider with in-memory caching (recommended)
 - CloudProvider: Legacy provider using LightRAG's openai_complete_if_cache
 - LocalProvider: For local LLM servers (Ollama, LM Studio, etc.)
 
 Features:
 - Unified interface for all LLM providers (cloud + local)
 - LangChain integration with multi-provider support
-- SQLite caching for LLM responses
+- In-memory caching for LLM responses
 - Automatic retry with exponential backoff
 - Smart routing based on URL detection
 - Provider capability detection

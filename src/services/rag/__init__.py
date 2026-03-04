@@ -51,10 +51,6 @@ def __getattr__(name: str):
         from .pipelines.raganything import RAGAnythingPipeline
 
         return RAGAnythingPipeline
-    if name == "RAGAnythingDoclingPipeline":
-        from .pipelines.raganything_docling import RAGAnythingDoclingPipeline
-
-        return RAGAnythingDoclingPipeline
     if name == "LlamaIndexPipeline":
         # Optional dependency: llama_index
         from .pipelines.llamaindex import LlamaIndexPipeline

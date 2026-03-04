@@ -296,19 +296,19 @@ class KnowledgeBaseInitializer:
         Clean up parser output directories after image migration.
 
         NOTE: Image migration and path updates are now handled by the RAG pipeline
-        (raganything.py / raganything_docling.py) BEFORE RAG insertion. This ensures
+        (raganything.py) BEFORE RAG insertion. This ensures
         RAG stores the correct canonical image paths (kb/images/) from the start.
 
         This method now only:
         1. Checks if there are any leftover nested directories to clean up
         2. Removes empty temporary parser output directories
 
-        Supports both 'auto' (MinerU) and 'docling' parser output directories.
+        Supports 'auto' (MinerU) parser output directories.
         """
         logger.info("\nChecking for leftover parser output directories...")
 
-        # Support both 'auto' (MinerU) and 'docling' parser output directories
-        parser_subdirs = ["auto", "docling"]
+        # Support 'auto' (MinerU) parser output directories
+        parser_subdirs = ["auto"]
         cleaned_count = 0
 
         # Find and remove empty parser output directories
