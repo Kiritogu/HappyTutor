@@ -7,14 +7,15 @@ import React, {
   useState,
   useCallback,
 } from "react";
-import { wsUrl, apiUrl } from "@/lib/api";
+import { wsUrl, apiUrl, ensureFreshTokenForWs } from "@/lib/api";
+import { refreshAccessToken } from "@/lib/auth";
 import { ChatState, HomeChatMessage, INITIAL_CHAT_STATE } from "@/types/chat";
 
 // Context type
 interface ChatContextType {
   chatState: ChatState;
   setChatState: React.Dispatch<React.SetStateAction<ChatState>>;
-  sendChatMessage: (message: string) => void;
+  sendChatMessage: (message: string) => Promise<void>;
   clearChatHistory: () => void;
   loadChatSession: (sessionId: string) => Promise<void>;
   newChatSession: () => void;
@@ -29,7 +30,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const sessionIdRef = useRef<string | null>(null);
 
   const sendChatMessage = useCallback(
-    (message: string) => {
+    async (message: string) => {
       if (!message.trim() || chatState.isLoading) return;
 
       // Add user message
@@ -45,10 +46,14 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         chatWs.current.close();
       }
 
+      // Ensure token is fresh before connecting
+      await ensureFreshTokenForWs();
+
       const ws = new WebSocket(wsUrl("/api/v1/chat"));
       chatWs.current = ws;
 
       let assistantMessage = "";
+      let retried = false;
 
       ws.onopen = () => {
         // Build history from current messages (excluding the one just added)
@@ -162,7 +167,17 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         }));
       };
 
-      ws.onclose = () => {
+      ws.onclose = async (event) => {
+        // Retry once on auth failure (code 1008)
+        if (event.code === 1008 && !retried) {
+          retried = true;
+          const newToken = await refreshAccessToken();
+          if (newToken) {
+            setChatState((prev) => ({ ...prev, isLoading: false, currentStage: null }));
+            sendChatMessage(message);
+            return;
+          }
+        }
         if (chatWs.current === ws) {
           chatWs.current = null;
         }

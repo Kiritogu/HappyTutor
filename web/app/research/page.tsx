@@ -24,7 +24,8 @@ import rehypeRaw from "rehype-raw";
 import "katex/dist/katex.min.css";
 import { Mermaid } from "@/components/Mermaid";
 import { useGlobal } from "@/context/GlobalContext";
-import { apiUrl, wsUrl } from "@/lib/api";
+import { apiUrl, wsUrl, ensureFreshTokenForWs } from "@/lib/api";
+import { refreshAccessToken } from "@/lib/auth";
 import AddToNotebookModal from "@/components/AddToNotebookModal";
 import { exportToPdf, preprocessMarkdownForPdf } from "@/lib/pdfExport";
 import { useResearchReducer } from "@/hooks/useResearchReducer";
@@ -132,14 +133,18 @@ export default function ResearchPage() {
   }, [state.activeTaskIds, selectedTaskId]);
 
   // Start Research Function (Local)
-  const startResearchLocal = (topic: string) => {
+  const startResearchLocal = async (topic: string) => {
     if (wsRef.current) wsRef.current.close();
 
     // Update Global State to "running" for sidebar status
     setGlobalResearchState((prev) => ({ ...prev, status: "running", topic }));
 
+    // Ensure token is fresh before connecting
+    await ensureFreshTokenForWs();
+
     const ws = new WebSocket(wsUrl("/api/v1/research/run"));
     wsRef.current = ws;
+    let retried = false;
 
     ws.onopen = () => {
       ws.send(
@@ -205,8 +210,17 @@ export default function ResearchPage() {
       setGlobalResearchState((prev) => ({ ...prev, status: "idle" }));
     };
 
-    ws.onclose = () => {
-      // Optional: handle close
+    ws.onclose = async (event) => {
+      // Retry once on auth failure (code 1008)
+      if (event.code === 1008 && !retried) {
+        retried = true;
+        const newToken = await refreshAccessToken();
+        if (newToken) {
+          setGlobalResearchState((prev) => ({ ...prev, status: "idle" }));
+          startResearchLocal(topic);
+          return;
+        }
+      }
     };
   };
 

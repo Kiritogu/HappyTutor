@@ -1,5 +1,11 @@
 // API configuration and utility functions
 
+import {
+  getAccessToken,
+  isTokenExpiringSoon,
+  refreshAccessToken,
+} from "@/lib/auth";
+
 // Get API base URL from environment variable
 // This is automatically set by start_web.py based on config/main.yaml
 // The .env.local file is auto-generated on startup with the correct backend port
@@ -44,19 +50,6 @@ export function apiUrl(path: string): string {
  * @returns WebSocket URL (e.g., 'ws://localhost:{backend_port}/api/v1/solve')
  * Note: backend_port is configured in config/main.yaml
  */
-
-function getAccessTokenForWs(): string | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  try {
-    return localStorage.getItem("deeptutor-auth-access-token");
-  } catch {
-    return null;
-  }
-}
-
 export function wsUrl(path: string): string {
   // Security Hardening: Convert http to ws and https to wss.
   // In production environments (where API_BASE_URL starts with https), this ensures secure websockets.
@@ -69,7 +62,7 @@ export function wsUrl(path: string): string {
   const normalizedBase = base.endsWith("/") ? base.slice(0, -1) : base;
 
   const fullUrl = `${normalizedBase}${normalizedPath}`;
-  const token = getAccessTokenForWs();
+  const token = getAccessToken();
 
   if (!token) {
     return fullUrl;
@@ -83,5 +76,18 @@ export function wsUrl(path: string): string {
     return url.toString();
   } catch {
     return fullUrl;
+  }
+}
+
+/**
+ * Ensure the access token is fresh before creating a WebSocket connection.
+ *
+ * If the token is expired or expiring within 60 seconds, attempts a refresh.
+ * Silently does nothing if refresh fails — the WebSocket will be created with
+ * whatever token is available and the backend will reject it with code 1008.
+ */
+export async function ensureFreshTokenForWs(): Promise<void> {
+  if (isTokenExpiringSoon(60)) {
+    await refreshAccessToken();
   }
 }

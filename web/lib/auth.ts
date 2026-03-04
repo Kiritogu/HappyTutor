@@ -97,3 +97,89 @@ export async function tryServerLogout(): Promise<void> {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Token expiry detection & refresh
+// ---------------------------------------------------------------------------
+
+/**
+ * Check whether the current access token is expired or will expire
+ * within `bufferSeconds` from now.
+ *
+ * JWT structure: header.payload.signature (base64url-encoded, dot-separated).
+ * The payload contains an `exp` field (Unix timestamp in seconds).
+ *
+ * @param bufferSeconds - Treat the token as expired if it expires within
+ *   this many seconds from now. Default 60.
+ * @returns `true` if no token, token is malformed, or token expires within buffer.
+ */
+export function isTokenExpiringSoon(bufferSeconds = 60): boolean {
+  try {
+    const token = getAccessToken();
+    if (!token) {
+      return true;
+    }
+
+    const parts = token.split(".");
+    if (parts.length !== 3) {
+      return true;
+    }
+
+    // Base64url → standard base64
+    const base64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+    const payload = JSON.parse(atob(base64)) as { exp?: number };
+
+    if (typeof payload.exp !== "number") {
+      return true;
+    }
+
+    return payload.exp < Date.now() / 1000 + bufferSeconds;
+  } catch {
+    return true;
+  }
+}
+
+let _refreshPromise: Promise<string | null> | null = null;
+
+async function _doRefreshToken(): Promise<string | null> {
+  const refreshToken = getRefreshToken();
+  if (!refreshToken) {
+    return null;
+  }
+
+  try {
+    const response = await fetch(apiUrl("/api/v1/auth/refresh"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+
+    if (!response.ok) {
+      return null;
+    }
+
+    const session = (await response.json()) as AuthSession;
+    setAuthSession(session);
+    return session.access_token;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Refresh the access token using the stored refresh token.
+ *
+ * Concurrent calls are deduplicated — only one refresh request is in-flight
+ * at a time, and all callers share the same result. This prevents the
+ * one-time-use refresh token from being consumed by a race condition.
+ *
+ * @returns The new access token, or null if refresh failed.
+ */
+export function refreshAccessToken(): Promise<string | null> {
+  if (!_refreshPromise) {
+    _refreshPromise = _doRefreshToken().finally(() => {
+      _refreshPromise = null;
+    });
+  }
+  return _refreshPromise;
+}
+
