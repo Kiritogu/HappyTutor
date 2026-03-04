@@ -141,7 +141,6 @@ def check_backend_packages() -> tuple[bool, int, int]:
         ("raganything", "raganything", "0.1.0", False),
         ("llama-index", "llama_index", "0.14.0", False),
         # Document parsing
-        ("docling", "docling", "2.31.0", True),  # Optional
         ("PyMuPDF", "fitz", "1.26.0", False),
         # Academic
         ("arxiv", "arxiv", "2.0.0", False),

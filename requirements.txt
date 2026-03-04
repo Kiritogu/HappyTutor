@@ -85,14 +85,13 @@ PyMuPDF==1.26.7            # For PDF text extraction (fast and reliable)
 langchain-core==0.3.83         # Core LangChain abstractions
 langchain-openai==0.3.0        # OpenAI integration (ChatOpenAI)
 langchain-anthropic==0.3.22    # Anthropic integration (ChatAnthropic)
-langchain-community==0.3.31    # Community integrations (SQLiteCache)
+langchain-community==0.3.31    # Community integrations
 langchain-ollama==0.3.10       # Ollama integration (ChatOllama)
 
 # ============================================
 # LangGraph (workflow orchestration)
 # ============================================
 langgraph==1.0.1
-langgraph-checkpoint-sqlite==2.0.0
 
 # ============================================
 # Database / Storage (Optional)

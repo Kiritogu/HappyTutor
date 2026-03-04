@@ -1,8 +1,7 @@
 system:
   language: en
 storage:
-  backend: postgres # file | sqlite | postgres
-  sqlite_path: ./data/db/deeptutor.sqlite
+  backend: postgres
   postgres_dsn: ""
   auto_migrate: true
 paths:
