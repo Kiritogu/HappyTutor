@@ -29,8 +29,6 @@ Usage:
 
 from __future__ import annotations
 
-import sqlite3
-from pathlib import Path
 from typing import Any
 
 from langchain_core.runnables import RunnableConfig
@@ -52,7 +50,6 @@ from .state import CreateSessionState, GuideGraphState
 def build_session_graph(
     *,
     enable_checkpoint: bool = False,
-    checkpoint_path: str | Path | None = None,
 ) -> Any:
     """
     Build the session creation graph.
@@ -62,8 +59,7 @@ def build_session_graph(
     Flow: START → locate_knowledge → END
 
     Args:
-        enable_checkpoint: Whether to enable SQLite checkpointing.
-        checkpoint_path: Path for the checkpoint database.
+        enable_checkpoint: Whether to enable in-memory checkpointing.
 
     Returns:
         Compiled LangGraph graph ready for ainvoke().
@@ -81,12 +77,9 @@ def build_session_graph(
     checkpointer = None
     if enable_checkpoint:
         try:
-            from langgraph.checkpoint.sqlite import SqliteSaver
+            from langgraph.checkpoint.memory import MemorySaver
 
-            db_path = checkpoint_path or Path("data/checkpoints/guide_session.sqlite")
-            Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-            conn = sqlite3.connect(str(db_path), check_same_thread=False)
-            checkpointer = SqliteSaver(conn)
+            checkpointer = MemorySaver()
         except Exception:
             checkpointer = None
 
@@ -96,7 +89,6 @@ def build_session_graph(
 def build_interaction_graph(
     *,
     enable_checkpoint: bool = False,
-    checkpoint_path: str | Path | None = None,
 ) -> Any:
     """
     Build the interaction graph for user learning sessions.
@@ -115,8 +107,7 @@ def build_interaction_graph(
           → "invalid":  END
 
     Args:
-        enable_checkpoint: Whether to enable SQLite checkpointing.
-        checkpoint_path: Path for the checkpoint database.
+        enable_checkpoint: Whether to enable in-memory checkpointing.
 
     Returns:
         Compiled LangGraph graph ready for ainvoke().
@@ -175,12 +166,9 @@ def build_interaction_graph(
     checkpointer = None
     if enable_checkpoint:
         try:
-            from langgraph.checkpoint.sqlite import SqliteSaver
+            from langgraph.checkpoint.memory import MemorySaver
 
-            db_path = checkpoint_path or Path("data/checkpoints/guide_interaction.sqlite")
-            Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-            conn = sqlite3.connect(str(db_path), check_same_thread=False)
-            checkpointer = SqliteSaver(conn)
+            checkpointer = MemorySaver()
         except Exception:
             checkpointer = None
 
