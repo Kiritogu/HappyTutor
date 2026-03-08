@@ -97,14 +97,10 @@ system:
   language: en  # "zh" or "en"
 
 storage:
-  # Structured user data persistence
-  # - postgres: store history/notebook/chat/ui-settings in PostgreSQL (recommended for server)
-  # - sqlite: store history/notebook/chat/ui-settings in SQLite (single-node)
-  # - file: legacy JSON files under data/user/
-  backend: postgres  # file | sqlite | postgres
-  sqlite_path: ./data/db/deeptutor.sqlite
+  # Structured user data persistence (PostgreSQL)
+  backend: postgres
   postgres_dsn: ""  # Recommended: set via .env -> DEEPTUTOR_POSTGRES_DSN
-  auto_migrate: true  # import existing JSON files on first run
+  auto_migrate: true
 
 paths:
   user_data_dir: ./data/user

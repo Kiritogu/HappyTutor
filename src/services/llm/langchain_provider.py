@@ -5,7 +5,7 @@ LangChain LLM Provider
 
 Provides LangChain-based LLM integration with:
 - Multi-provider support (OpenAI, Anthropic, Ollama, etc.)
-- SQLite caching (replaces LightRAG's openai_complete_if_cache)
+- In-memory caching for response deduplication
 - Compatible with existing factory interface
 
 Usage:
@@ -27,7 +27,6 @@ Usage:
 """
 
 import os
-from pathlib import Path
 from typing import Any, AsyncGenerator, Dict, List, Optional
 
 from src.logging import get_logger
@@ -67,21 +66,15 @@ class LangChainProvider:
 
     This provider offers:
     - Multi-provider support through LangChain's unified interface
-    - SQLite caching for response deduplication
+    - In-memory caching for response deduplication
     - Compatible API with existing factory.complete() interface
     """
 
     _cache_initialized: bool = False
-    _cache_path: str = ".cache/llm_cache.db"
 
     @classmethod
-    def init_cache(cls, cache_path: Optional[str] = None) -> None:
-        """
-        Initialize SQLite cache for LLM responses.
-
-        Args:
-            cache_path: Path to SQLite cache file. Defaults to .cache/llm_cache.db
-        """
+    def init_cache(cls) -> None:
+        """Initialize in-memory cache for LLM responses."""
         if cls._cache_initialized:
             return
 
@@ -90,19 +83,12 @@ class LangChainProvider:
             return
 
         try:
-            from langchain_community.cache import SQLiteCache
+            from langchain_core.caches import InMemoryCache
             from langchain_core.globals import set_llm_cache
 
-            path = cache_path or cls._cache_path
-            cls._cache_path = path
-
-            # Ensure cache directory exists
-            cache_dir = Path(path).parent
-            cache_dir.mkdir(parents=True, exist_ok=True)
-
-            set_llm_cache(SQLiteCache(database_path=path))
+            set_llm_cache(InMemoryCache())
             cls._cache_initialized = True
-            logger.info(f"LangChain cache initialized: {path}")
+            logger.info("LangChain in-memory cache initialized")
         except Exception as e:
             logger.warning(f"Failed to initialize LangChain cache: {e}")
 

@@ -8,8 +8,8 @@ import { GlobalProvider } from "@/context/GlobalContext";
 import { I18nClientBridge } from "@/i18n/I18nClientBridge";
 
 export const metadata: Metadata = {
-  title: "DeepTutor Platform",
-  description: "Multi-Agent Teaching & Research Copilot",
+  title: "智学助手",
+  description: "AI 驱动的个性化学习平台",
 };
 
 export default function RootLayout({

@@ -21,8 +21,6 @@ Usage:
 
 from __future__ import annotations
 
-import sqlite3
-from pathlib import Path
 from typing import Any
 
 from langchain_core.runnables import RunnableConfig
@@ -44,7 +42,6 @@ from .state import QuestionGraphState
 def build_question_graph(
     *,
     enable_checkpoint: bool = False,
-    checkpoint_path: str | Path | None = None,
 ) -> Any:
     """
     Build and compile the question generation graph.
@@ -53,8 +50,7 @@ def build_question_graph(
     via a conditional edge after retrieval.
 
     Args:
-        enable_checkpoint: Whether to enable SQLite checkpointing.
-        checkpoint_path: Path for the checkpoint database.
+        enable_checkpoint: Whether to enable in-memory checkpointing.
 
     Returns:
         Compiled LangGraph graph ready for ainvoke().
@@ -118,12 +114,9 @@ def build_question_graph(
     checkpointer = None
     if enable_checkpoint:
         try:
-            from langgraph.checkpoint.sqlite import SqliteSaver
+            from langgraph.checkpoint.memory import MemorySaver
 
-            db_path = checkpoint_path or Path("data/checkpoints/question_graph.sqlite")
-            Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-            conn = sqlite3.connect(str(db_path), check_same_thread=False)
-            checkpointer = SqliteSaver(conn)
+            checkpointer = MemorySaver()
         except Exception:
             checkpointer = None
 

@@ -2,8 +2,6 @@ from __future__ import annotations
 
 """
 PostgreSQL-backed storage for structured user data.
-
-Implements the same API surface as the SQLite storage in `src/services/storage/user_db.py`.
 """
 
 import json
@@ -34,14 +32,6 @@ def _safe_json_dumps(value: Any) -> str:
         return json.dumps(str(value), ensure_ascii=False)
 
 
-def _load_json_file(path: Path) -> Any | None:
-    try:
-        with open(path, encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return None
-
-
 class PostgresUserDB:
     def __init__(
         self,
@@ -67,8 +57,6 @@ class PostgresUserDB:
         self._pool = ThreadedConnectionPool(minconn=minconn, maxconn=maxconn, dsn=dsn)
 
         self._init_schema()
-        if auto_migrate:
-            self._migrate_from_files()
 
     def close(self) -> None:
         with self._lock:
@@ -248,195 +236,6 @@ class PostgresUserDB:
                     "INSERT INTO storage_meta(key, value) VALUES (%s, %s) "
                     "ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value",
                     (key, value),
-                )
-
-    # -------------------------------------------------------------------------
-    # Migration (JSON files -> PostgreSQL)
-    # -------------------------------------------------------------------------
-
-    def _migrate_from_files(self) -> None:
-        migrated_key = "migrated_from_files_v1"
-        if self._get_meta(migrated_key) == "1":
-            return
-
-        user_dir = self._project_root / "data" / "user"
-        self._migrate_notebooks_from_files(user_dir / "notebook")
-        self._migrate_history_from_file(user_dir / "user_history.json")
-        self._migrate_chat_from_file(user_dir / "chat_sessions.json")
-        self._migrate_ui_settings_from_file(user_dir / "settings" / "interface.json")
-
-        self._set_meta(migrated_key, "1")
-
-    def _migrate_notebooks_from_files(self, notebook_dir: Path) -> None:
-        if not notebook_dir.exists():
-            return
-
-        notebook_files = [p for p in notebook_dir.glob("*.json") if p.name != "notebooks_index.json"]
-        if not notebook_files:
-            return
-
-        with self._conn() as conn:
-            with conn.cursor() as cur:
-                for notebook_file in notebook_files:
-                    notebook = _load_json_file(notebook_file)
-                    if not isinstance(notebook, dict):
-                        continue
-
-                    notebook_id = str(notebook.get("id") or "").strip()
-                    if not notebook_id:
-                        continue
-
-                    name = str(notebook.get("name") or "Untitled")
-                    description = str(notebook.get("description") or "")
-                    created_at = float(notebook.get("created_at") or time.time())
-                    updated_at = float(notebook.get("updated_at") or created_at)
-                    color = str(notebook.get("color") or "#3B82F6")
-                    icon = str(notebook.get("icon") or "book")
-
-                    cur.execute(
-                        "INSERT INTO notebooks(id, name, description, created_at, updated_at, color, icon) "
-                        "VALUES (%s, %s, %s, %s, %s, %s, %s) "
-                        "ON CONFLICT(id) DO UPDATE SET "
-                        "name=EXCLUDED.name, description=EXCLUDED.description, updated_at=EXCLUDED.updated_at, "
-                        "color=EXCLUDED.color, icon=EXCLUDED.icon",
-                        (notebook_id, name, description, created_at, updated_at, color, icon),
-                    )
-
-                    for record in notebook.get("records", []) or []:
-                        if not isinstance(record, dict):
-                            continue
-                        record_id = str(record.get("id") or "").strip()
-                        if not record_id:
-                            continue
-
-                        record_type = str(record.get("type") or "")
-                        title = str(record.get("title") or "")
-                        user_query = str(record.get("user_query") or "")
-                        output = str(record.get("output") or "")
-                        metadata = (
-                            record.get("metadata") if isinstance(record.get("metadata"), dict) else {}
-                        )
-                        created_at_r = float(record.get("created_at") or updated_at)
-                        kb_name = record.get("kb_name")
-
-                        cur.execute(
-                            "INSERT INTO notebook_records("
-                            "notebook_id, record_id, type, title, user_query, output, metadata, created_at, kb_name"
-                            ") VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) "
-                            "ON CONFLICT(notebook_id, record_id) DO UPDATE SET "
-                            "type=EXCLUDED.type, title=EXCLUDED.title, user_query=EXCLUDED.user_query, "
-                            "output=EXCLUDED.output, metadata=EXCLUDED.metadata, created_at=EXCLUDED.created_at, "
-                            "kb_name=EXCLUDED.kb_name",
-                            (
-                                notebook_id,
-                                record_id,
-                                record_type,
-                                title,
-                                user_query,
-                                output,
-                                _safe_json_dumps(metadata),
-                                created_at_r,
-                                kb_name,
-                            ),
-                        )
-
-    def _migrate_history_from_file(self, history_file: Path) -> None:
-        data = _load_json_file(history_file)
-        sessions: list[dict[str, Any]] = []
-        if isinstance(data, dict):
-            raw = data.get("sessions", [])
-            if isinstance(raw, list):
-                sessions = [s for s in raw if isinstance(s, dict)]
-        elif isinstance(data, list):
-            sessions = [s for s in data if isinstance(s, dict)]
-
-        if not sessions:
-            return
-
-        with self._conn() as conn:
-            with conn.cursor() as cur:
-                for entry in sessions:
-                    entry_id = str(entry.get("id") or "").strip()
-                    if not entry_id:
-                        continue
-                    ts = float(entry.get("timestamp") or time.time())
-                    entry_type = str(entry.get("type") or "")
-                    title = str(entry.get("title") or "")
-                    summary = str(entry.get("summary") or "")
-                    content = entry.get("content") if isinstance(entry.get("content"), dict) else {}
-
-                    cur.execute(
-                        "INSERT INTO history_entries(id, timestamp, type, title, summary, content) "
-                        "VALUES (%s, %s, %s, %s, %s, %s) "
-                        "ON CONFLICT(id) DO UPDATE SET "
-                        "timestamp=EXCLUDED.timestamp, type=EXCLUDED.type, title=EXCLUDED.title, "
-                        "summary=EXCLUDED.summary, content=EXCLUDED.content",
-                        (entry_id, ts, entry_type, title, summary, _safe_json_dumps(content)),
-                    )
-
-    def _migrate_chat_from_file(self, chat_file: Path) -> None:
-        data = _load_json_file(chat_file)
-        if not isinstance(data, dict):
-            return
-        sessions = data.get("sessions", [])
-        if not isinstance(sessions, list):
-            return
-
-        with self._conn() as conn:
-            with conn.cursor() as cur:
-                for session in sessions:
-                    if not isinstance(session, dict):
-                        continue
-                    session_id = str(session.get("session_id") or "").strip()
-                    if not session_id:
-                        continue
-
-                    title = str(session.get("title") or "New Chat")
-                    settings = session.get("settings") if isinstance(session.get("settings"), dict) else {}
-                    created_at = float(session.get("created_at") or time.time())
-                    updated_at = float(session.get("updated_at") or created_at)
-
-                    cur.execute(
-                        "INSERT INTO chat_sessions(session_id, user_id, title, settings, created_at, updated_at) "
-                        "VALUES (%s, %s, %s, %s, %s, %s) "
-                        "ON CONFLICT(session_id) DO UPDATE SET "
-                        "user_id=EXCLUDED.user_id, title=EXCLUDED.title, settings=EXCLUDED.settings, updated_at=EXCLUDED.updated_at",
-                        (session_id, SYSTEM_USER_ID, title, _safe_json_dumps(settings), created_at, updated_at),
-                    )
-
-                    cur.execute(
-                        "SELECT 1 FROM chat_messages WHERE session_id = %s LIMIT 1",
-                        (session_id,),
-                    )
-                    if cur.fetchone():
-                        continue
-
-                    for msg in session.get("messages", []) or []:
-                        if not isinstance(msg, dict):
-                            continue
-                        role = str(msg.get("role") or "")
-                        content = str(msg.get("content") or "")
-                        ts = float(msg.get("timestamp") or updated_at)
-                        sources = msg.get("sources")
-                        sources_json = _safe_json_dumps(sources) if isinstance(sources, dict) else None
-
-                        cur.execute(
-                            "INSERT INTO chat_messages(session_id, role, content, sources, timestamp) "
-                            "VALUES (%s, %s, %s, %s, %s)",
-                            (session_id, role, content, sources_json, ts),
-                        )
-
-    def _migrate_ui_settings_from_file(self, interface_file: Path) -> None:
-        settings = _load_json_file(interface_file)
-        if not isinstance(settings, dict):
-            return
-        now = time.time()
-        with self._conn() as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    "INSERT INTO ui_settings(key, user_id, value, updated_at) VALUES (%s, %s, %s, %s) "
-                    "ON CONFLICT(key, user_id) DO UPDATE SET value=EXCLUDED.value, updated_at=EXCLUDED.updated_at",
-                    ("interface", SYSTEM_USER_ID, _safe_json_dumps(settings), now),
                 )
 
     # -------------------------------------------------------------------------

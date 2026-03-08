@@ -68,10 +68,9 @@ paths:
 
 ## Database Storage
 
-Structured user data (history / notebooks / chat sessions / UI settings) can be stored in a database:
+Structured user data (history / notebooks / chat sessions / UI settings) is stored in PostgreSQL:
 
-- **PostgreSQL (server)**: set `DEEPTUTOR_STORAGE_BACKEND=postgres` and `DEEPTUTOR_POSTGRES_DSN=...`
-- **SQLite (single-node)**: set `DEEPTUTOR_STORAGE_BACKEND=sqlite` and `DEEPTUTOR_SQLITE_PATH=./data/db/deeptutor.sqlite`
+- Set `DEEPTUTOR_POSTGRES_DSN=postgresql://user:pass@host:5432/dbname` in `.env`
 
 Artifacts (reports, images, etc.) remain file-based under `data/user/` and are served via `/api/outputs`.
 

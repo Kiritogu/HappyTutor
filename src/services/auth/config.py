@@ -4,8 +4,6 @@ from dataclasses import dataclass
 import os
 from pathlib import Path
 
-from src.services.storage.user_db import get_storage_settings
-
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 
@@ -28,10 +26,6 @@ class AuthSettings:
 def get_auth_settings(project_root: Path | None = None) -> AuthSettings:
     if project_root is None:
         project_root = PROJECT_ROOT
-
-    storage_settings = get_storage_settings(project_root=project_root)
-    if storage_settings.backend != "postgres":
-        raise ValueError("Authentication currently requires postgres backend.")
 
     return AuthSettings(
         jwt_secret=os.getenv("AUTH_JWT_SECRET", ""),

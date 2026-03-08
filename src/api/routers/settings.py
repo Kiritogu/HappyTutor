@@ -6,7 +6,6 @@ Manages basic UI settings: theme, language, sidebar customization.
 Configuration for LLM/Embedding/TTS/Search is handled by the unified config service.
 """
 
-import json
 from pathlib import Path
 from typing import List, Literal, Optional
 
@@ -16,11 +15,6 @@ from pydantic import BaseModel
 from src.api.dependencies.auth import get_current_user_from_header
 
 router = APIRouter()
-
-# Settings file path for UI preferences (stored in settings folder with other configs)
-SETTINGS_FILE = (
-    Path(__file__).parent.parent.parent.parent / "data" / "user" / "settings" / "interface.json"
-)
 
 # Default sidebar navigation order
 DEFAULT_SIDEBAR_NAV_ORDER = {
@@ -66,51 +60,25 @@ class SidebarNavOrderUpdate(BaseModel):
 
 
 def load_ui_settings(*, user_id: str) -> dict:
-    """Load UI-specific settings from json file"""
-    # Prefer DB backend when enabled
+    """Load UI settings from database."""
+    from src.services.storage import get_user_db
+
+    project_root = Path(__file__).resolve().parents[3]
+    db = get_user_db(project_root=project_root)
     try:
-        from src.services.storage import get_user_db
-
-        project_root = Path(__file__).resolve().parents[3]
-        db = get_user_db(project_root=project_root)
+        saved = db.ui_get(user_id=user_id, key="interface") or {}
+        return {**DEFAULT_UI_SETTINGS, **saved}
     except Exception:
-        db = None
-
-    if db is not None:
-        try:
-            saved = db.ui_get(user_id=user_id, key="interface") or {}
-            return {**DEFAULT_UI_SETTINGS, **saved}
-        except Exception:
-            return DEFAULT_UI_SETTINGS.copy()
-
-    if SETTINGS_FILE.exists():
-        try:
-            with open(SETTINGS_FILE, encoding="utf-8") as f:
-                saved = json.load(f)
-                return {**DEFAULT_UI_SETTINGS, **saved}
-        except Exception:
-            pass
-    return DEFAULT_UI_SETTINGS.copy()
+        return DEFAULT_UI_SETTINGS.copy()
 
 
 def save_ui_settings(*, user_id: str, settings: dict):
-    """Save UI settings"""
-    # Prefer DB backend when enabled
-    try:
-        from src.services.storage import get_user_db
+    """Save UI settings to database."""
+    from src.services.storage import get_user_db
 
-        project_root = Path(__file__).resolve().parents[3]
-        db = get_user_db(project_root=project_root)
-    except Exception:
-        db = None
-
-    if db is not None:
-        db.ui_set(user_id=user_id, key="interface", value=settings)
-        return
-
-    SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with open(SETTINGS_FILE, "w", encoding="utf-8") as f:
-        json.dump(settings, f, ensure_ascii=False, indent=2)
+    project_root = Path(__file__).resolve().parents[3]
+    db = get_user_db(project_root=project_root)
+    db.ui_set(user_id=user_id, key="interface", value=settings)
 
 
 @router.get("")

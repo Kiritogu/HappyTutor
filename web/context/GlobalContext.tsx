@@ -8,7 +8,9 @@ import React, {
   useEffect,
   useCallback,
 } from "react";
-import { wsUrl, apiUrl } from "@/lib/api";
+import { wsUrl, apiUrl, ensureFreshTokenForWs } from "@/lib/api";
+import { refreshAccessToken, getAccessToken } from "@/lib/auth";
+import { useAuth } from "@/context/AuthContext";
 import {
   initializeTheme,
   setTheme,
@@ -444,6 +446,8 @@ const DEFAULT_CHAT_STATE: ChatState = {
 };
 
 export function GlobalProvider({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated, isLoading: isAuthLoading } = useAuth();
+
   // --- UI Settings Logic ---
   const [uiSettings, setUiSettings] = useState<{
     theme: "light" | "dark";
@@ -452,10 +456,12 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
 
   const [isInitialized, setIsInitialized] = useState(false);
 
-  const refreshSettings = async () => {
+  const refreshSettings = useCallback(async () => {
     // Try to load from backend API first, fallback to localStorage
     try {
-      const res = await fetch(apiUrl("/api/v1/settings"));
+      const res = await fetch(apiUrl("/api/v1/settings"), {
+        headers: { Authorization: `Bearer ${getAccessToken() ?? ""}` },
+      });
       if (res.ok) {
         const data = await res.json();
         const serverTheme = data.ui?.theme || "light";
@@ -491,7 +497,7 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
       language: storedLanguage,
     });
     setTheme(themeToUse);
-  };
+  }, []);
 
   const updateTheme = async (newTheme: "light" | "dark") => {
     // Update UI immediately
@@ -502,7 +508,10 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
     try {
       await fetch(apiUrl("/api/v1/settings/theme"), {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${getAccessToken() ?? ""}`,
+        },
         body: JSON.stringify({ theme: newTheme }),
       });
     } catch (e) {
@@ -521,7 +530,10 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
     try {
       await fetch(apiUrl("/api/v1/settings/language"), {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${getAccessToken() ?? ""}`,
+        },
         body: JSON.stringify({ language: newLanguage }),
       });
     } catch (e) {
@@ -536,19 +548,22 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
       const initialTheme = initializeTheme();
       const storedLanguage =
         typeof window !== "undefined"
-          ? (localStorage.getItem(LANGUAGE_STORAGE_KEY) as "en" | "zh") || "en"
-          : "en";
+          ? (localStorage.getItem(LANGUAGE_STORAGE_KEY) as "en" | "zh") || "zh"
+          : "zh";
 
       setUiSettings({
         theme: initialTheme,
         language: storedLanguage,
       });
       setIsInitialized(true);
-
-      // Then async load from server (which may override)
-      refreshSettings();
     }
   }, [isInitialized]);
+
+  // Sync settings after auth state resolves, so login picks server-side language.
+  useEffect(() => {
+    if (!isInitialized || isAuthLoading) return;
+    refreshSettings();
+  }, [isAuthenticated, isAuthLoading, isInitialized, refreshSettings]);
 
   // --- Sidebar State ---
   const SIDEBAR_MIN_WIDTH = 64;
@@ -625,34 +640,16 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
   const [sidebarNavOrder, setSidebarNavOrderState] =
     useState<SidebarNavOrder>(DEFAULT_NAV_ORDER);
 
-  // Initialize sidebar customization from backend API
-  useEffect(() => {
-    const loadSidebarSettings = async () => {
-      try {
-        const response = await fetch(apiUrl("/api/v1/settings/sidebar"));
-        if (response.ok) {
-          const data = await response.json();
-          if (data.description) {
-            setSidebarDescriptionState(data.description);
-          }
-          if (data.nav_order) {
-            setSidebarNavOrderState(data.nav_order);
-          }
-        }
-      } catch (e) {
-        console.error("Failed to load sidebar settings from backend:", e);
-      }
-    };
-    loadSidebarSettings();
-  }, []);
-
   const setSidebarDescription = async (description: string) => {
     setSidebarDescriptionState(description);
     // Save to backend
     try {
       await fetch(apiUrl("/api/v1/settings/sidebar/description"), {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${getAccessToken() ?? ""}`,
+        },
         body: JSON.stringify({ description }),
       });
     } catch (e) {
@@ -666,7 +663,10 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
     try {
       await fetch(apiUrl("/api/v1/settings/sidebar/nav-order"), {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${getAccessToken() ?? ""}`,
+        },
         body: JSON.stringify({ nav_order: order }),
       });
     } catch (e) {
@@ -706,7 +706,7 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
   // Use ref to always have the latest sessionId in WebSocket callbacks
   const solverSessionIdRef = useRef<string | null>(null);
 
-  const startSolver = (question: string, kb: string) => {
+  const startSolver = async (question: string, kb: string) => {
     if (solverWs.current) solverWs.current.close();
 
     setSolverState((prev) => ({
@@ -739,8 +739,12 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
       },
     }));
 
+    // Ensure token is fresh before connecting
+    await ensureFreshTokenForWs();
+
     const ws = new WebSocket(wsUrl("/api/v1/solve"));
     solverWs.current = ws;
+    let retried = false;
 
     ws.onopen = () => {
       // Send question with current session_id (if any)
@@ -838,8 +842,17 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
       }));
     };
 
-    ws.onclose = () => {
-      // Clean up WebSocket reference on close
+    ws.onclose = async (event) => {
+      // Retry once on auth failure (code 1008)
+      if (event.code === 1008 && !retried) {
+        retried = true;
+        const newToken = await refreshAccessToken();
+        if (newToken) {
+          setSolverState((prev) => ({ ...prev, isSolving: false }));
+          startSolver(question, kb);
+          return;
+        }
+      }
       if (solverWs.current === ws) {
         solverWs.current = null;
       }
@@ -945,7 +958,7 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
     }
   }, [questionState, saveQuestionState]);
 
-  const startQuestionGen = (
+  const startQuestionGen = async (
     topic: string,
     diff: string,
     type: string,
@@ -988,8 +1001,12 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
       },
     }));
 
+    // Ensure token is fresh before connecting
+    await ensureFreshTokenForWs();
+
     const ws = new WebSocket(wsUrl("/api/v1/question/generate"));
     questionWs.current = ws;
+    let retried = false;
 
     ws.onopen = () => {
       ws.send(
@@ -1233,8 +1250,17 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
       }));
     };
 
-    ws.onclose = () => {
-      // Clean up WebSocket reference on close
+    ws.onclose = async (event) => {
+      // Retry once on auth failure (code 1008)
+      if (event.code === 1008 && !retried) {
+        retried = true;
+        const newToken = await refreshAccessToken();
+        if (newToken) {
+          setQuestionState((prev) => ({ ...prev, step: "config" }));
+          startQuestionGen(topic, diff, type, count, kb);
+          return;
+        }
+      }
       if (questionWs.current === ws) {
         questionWs.current = null;
       }
@@ -1465,9 +1491,13 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
       },
     }));
 
+    // Ensure token is fresh before connecting
+    await ensureFreshTokenForWs();
+
     // Create WebSocket connection
     const ws = new WebSocket(wsUrl("/api/v1/question/mimic"));
     questionWs.current = ws;
+    let retried = false;
 
     ws.onopen = async () => {
       if (hasFile && file) {
@@ -1517,6 +1547,22 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
     ws.onerror = () => {
       addQuestionLog({ type: "error", content: "WebSocket connection error" });
       setQuestionState((prev) => ({ ...prev, step: "config" }));
+    };
+
+    ws.onclose = async (event) => {
+      // Retry once on auth failure (code 1008)
+      if (event.code === 1008 && !retried) {
+        retried = true;
+        const newToken = await refreshAccessToken();
+        if (newToken) {
+          setQuestionState((prev) => ({ ...prev, step: "config" }));
+          startMimicQuestionGen(file, paperPath, kb, maxQuestions);
+          return;
+        }
+      }
+      if (questionWs.current === ws) {
+        questionWs.current = null;
+      }
     };
   };
 
@@ -1582,7 +1628,7 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
     }
   }, [researchState, saveResearchState]);
 
-  const startResearch = (
+  const startResearch = async (
     topic: string,
     kb: string,
     planMode: string = "medium",
@@ -1623,8 +1669,12 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
       },
     }));
 
+    // Ensure token is fresh before connecting
+    await ensureFreshTokenForWs();
+
     const ws = new WebSocket(wsUrl("/api/v1/research/run"));
     researchWs.current = ws;
+    let retried = false;
 
     ws.onopen = () => {
       ws.send(
@@ -1737,8 +1787,17 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
       }));
     };
 
-    ws.onclose = () => {
-      // Clean up WebSocket reference on close
+    ws.onclose = async (event) => {
+      // Retry once on auth failure (code 1008)
+      if (event.code === 1008 && !retried) {
+        retried = true;
+        const newToken = await refreshAccessToken();
+        if (newToken) {
+          setResearchState((prev) => ({ ...prev, status: "idle" }));
+          startResearch(topic, kb, planMode, enabledTools, skipRephrase);
+          return;
+        }
+      }
       if (researchWs.current === ws) {
         researchWs.current = null;
       }
@@ -1895,7 +1954,7 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
     isHydrated.current = true;
   }, []);
 
-  const sendChatMessage = (message: string) => {
+  const sendChatMessage = async (message: string) => {
     if (!message.trim() || chatState.isLoading) return;
 
     // Add user message
@@ -1911,8 +1970,12 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
       chatWs.current.close();
     }
 
+    // Ensure token is fresh before connecting
+    await ensureFreshTokenForWs();
+
     const ws = new WebSocket(wsUrl("/api/v1/chat"));
     chatWs.current = ws;
+    let retried = false;
 
     let assistantMessage = "";
 
@@ -2029,7 +2092,17 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
       }));
     };
 
-    ws.onclose = () => {
+    ws.onclose = async (event) => {
+      // Retry once on auth failure (code 1008)
+      if (event.code === 1008 && !retried) {
+        retried = true;
+        const newToken = await refreshAccessToken();
+        if (newToken) {
+          setChatState((prev) => ({ ...prev, isLoading: false, currentStage: null }));
+          sendChatMessage(message);
+          return;
+        }
+      }
       if (chatWs.current === ws) {
         chatWs.current = null;
       }

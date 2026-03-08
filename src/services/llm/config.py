@@ -70,7 +70,6 @@ class LLMConfig:
     temperature: float = 0.7
     # LangChain configuration
     use_langchain: bool = True  # Enable LangChain provider by default
-    cache_path: str = ".cache/llm_cache.db"  # SQLite cache path for LangChain
 
 
 def _strip_value(value: Optional[str]) -> Optional[str]:
@@ -91,7 +90,6 @@ def _get_llm_config_from_env() -> LLMConfig:
     # LangChain configuration from environment
     use_langchain_str = os.getenv("USE_LANGCHAIN", "true").lower()
     use_langchain = use_langchain_str in ("true", "1", "yes")
-    cache_path = os.getenv("LLM_CACHE_PATH", ".cache/llm_cache.db")
 
     # Validate required configuration
     if not model:
@@ -110,7 +108,6 @@ def _get_llm_config_from_env() -> LLMConfig:
         base_url=base_url,
         api_version=api_version,
         use_langchain=use_langchain,
-        cache_path=cache_path,
     )
 
 
@@ -131,7 +128,6 @@ def get_llm_config() -> LLMConfig:
     # Get LangChain settings from environment (can be overridden)
     use_langchain_str = os.getenv("USE_LANGCHAIN", "true").lower()
     use_langchain = use_langchain_str in ("true", "1", "yes")
-    cache_path = os.getenv("LLM_CACHE_PATH", ".cache/llm_cache.db")
 
     # 1. Try to get active config from unified config service
     try:
@@ -146,7 +142,6 @@ def get_llm_config() -> LLMConfig:
                 base_url=config.get("base_url"),
                 api_version=config.get("api_version"),
                 use_langchain=use_langchain,
-                cache_path=cache_path,
             )
     except ImportError:
         # Unified config service not yet available, fall back to env
@@ -171,7 +166,6 @@ async def get_llm_config_async() -> LLMConfig:
     # Get LangChain settings from environment (can be overridden)
     use_langchain_str = os.getenv("USE_LANGCHAIN", "true").lower()
     use_langchain = use_langchain_str in ("true", "1", "yes")
-    cache_path = os.getenv("LLM_CACHE_PATH", ".cache/llm_cache.db")
 
     # 1. Try to get active config from unified config service
     try:
@@ -186,7 +180,6 @@ async def get_llm_config_async() -> LLMConfig:
                 base_url=config.get("base_url"),
                 api_version=config.get("api_version"),
                 use_langchain=use_langchain,
-                cache_path=cache_path,
             )
     except ImportError:
         pass

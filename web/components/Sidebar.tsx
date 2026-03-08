@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useMemo } from "react";
+import { useState, useMemo } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
@@ -20,8 +20,6 @@ import {
   ChevronsLeft,
   ChevronsRight,
   GripVertical,
-  Check,
-  X,
   LucideIcon,
 } from "lucide-react";
 import { useGlobal } from "@/context/GlobalContext";
@@ -52,20 +50,12 @@ export default function Sidebar() {
   const {
     sidebarCollapsed,
     toggleSidebar,
-    sidebarDescription,
-    setSidebarDescription,
     sidebarNavOrder,
     setSidebarNavOrder,
   } = useGlobal();
   const { t } = useTranslation();
 
   const [showTooltip, setShowTooltip] = useState<string | null>(null);
-
-  // Editable description state
-  const [isEditingDescription, setIsEditingDescription] = useState(false);
-  const [editingDescriptionValue, setEditingDescriptionValue] =
-    useState(sidebarDescription);
-  const descriptionInputRef = useRef<HTMLInputElement>(null);
 
   // Drag and drop state
   const [draggedItem, setDraggedItem] = useState<string | null>(null);
@@ -99,40 +89,6 @@ export default function Sidebar() {
       },
     ];
   }, [sidebarNavOrder, t]);
-
-  // Handle description edit
-  const handleDescriptionEdit = () => {
-    setEditingDescriptionValue(sidebarDescription);
-    setIsEditingDescription(true);
-  };
-
-  const handleDescriptionSave = () => {
-    setSidebarDescription(
-      editingDescriptionValue.trim() || t("✨ Your description here"),
-    );
-    setIsEditingDescription(false);
-  };
-
-  const handleDescriptionCancel = () => {
-    setEditingDescriptionValue(sidebarDescription);
-    setIsEditingDescription(false);
-  };
-
-  const handleDescriptionKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") {
-      handleDescriptionSave();
-    } else if (e.key === "Escape") {
-      handleDescriptionCancel();
-    }
-  };
-
-  // Focus input when editing starts
-  useEffect(() => {
-    if (isEditingDescription && descriptionInputRef.current) {
-      descriptionInputRef.current.focus();
-      descriptionInputRef.current.select();
-    }
-  }, [isEditingDescription]);
 
   // Drag and drop handlers
   const handleDragStart = (
@@ -224,7 +180,7 @@ export default function Sidebar() {
               <div className="w-8 h-8 rounded-lg flex items-center justify-center overflow-hidden flex-shrink-0">
                 <Image
                   src="/logo.png"
-                  alt={t("DeepTutor Logo")}
+                  alt={t("智学助手 Logo")}
                   width={32}
                   height={32}
                   className="object-contain"
@@ -257,52 +213,6 @@ export default function Sidebar() {
                 <ChevronsLeft className="w-4 h-4" />
               </button>
             </div>
-          </div>
-
-          {/* Editable Description - only show when expanded */}
-          <div
-            className={`transition-all duration-300 ${
-              sidebarCollapsed ? "opacity-0 h-0 overflow-hidden" : "opacity-100"
-            }`}
-          >
-            {isEditingDescription ? (
-              <div className="flex items-center gap-1">
-                <input
-                  ref={descriptionInputRef}
-                  type="text"
-                  value={editingDescriptionValue}
-                  onChange={(e) => setEditingDescriptionValue(e.target.value)}
-                  onKeyDown={handleDescriptionKeyDown}
-                  className="flex-1 text-[10px] font-medium text-slate-700 dark:text-slate-300 bg-white/80 dark:bg-slate-900/60 px-2 py-1.5 rounded-md border border-emerald-200/80 dark:border-emerald-900/50 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
-                  placeholder={t("Enter your description...")}
-                />
-                <button
-                  onClick={handleDescriptionSave}
-                  className="p-1 text-green-500 hover:text-green-600 dark:text-green-400 dark:hover:text-green-300"
-                  title={t("Save")}
-                >
-                  <Check className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  onClick={handleDescriptionCancel}
-                  className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
-                  title={t("Cancel")}
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            ) : (
-              <div
-                onClick={handleDescriptionEdit}
-                className="text-[10px] font-medium text-slate-500 dark:text-slate-400 bg-slate-100/50 dark:bg-slate-700/50 px-2 py-1.5 rounded-md border border-slate-100 dark:border-slate-600 truncate cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700 hover:border-slate-200 dark:hover:border-slate-500 transition-colors group"
-                title={t("Click to edit")}
-              >
-                <span className="group-hover:hidden">{sidebarDescription}</span>
-                <span className="hidden group-hover:inline text-emerald-600 dark:text-emerald-400">
-                  ✏️ {t("Click to edit")}
-                </span>
-              </div>
-            )}
           </div>
         </div>
       </div>

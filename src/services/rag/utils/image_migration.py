@@ -7,8 +7,8 @@ Utilities for migrating images from parser output directories to the canonical
 knowledge base images directory, and updating content_list paths accordingly.
 
 This is needed because:
-1. Parsers (MinerU/Docling) output images to nested directories like:
-   content_list/{doc}/auto/images/ or content_list/{doc}/docling/images/
+1. Parsers (MinerU) output images to nested directories like:
+   content_list/{doc}/auto/images/
 2. RAG stores these paths in chunks, so if we move files later, retrieval breaks
 3. By migrating images BEFORE RAG indexing, we ensure correct paths are stored
 """
@@ -42,7 +42,7 @@ async def migrate_images_and_update_paths(
     4. Returns updated content_list
 
     Args:
-        content_list: Parsed content list from MinerU/Docling
+        content_list: Parsed content list from MinerU
         source_base_dir: Base directory where parser outputs are located
         target_images_dir: Canonical images directory (e.g., kb/images/)
         batch_size: Number of images to process in each batch
@@ -234,7 +234,7 @@ async def cleanup_parser_output_dirs(
     """
     Clean up parser output directories after successful migration.
 
-    Only removes the nested parser output directories (auto/, docling/),
+    Only removes the nested parser output directories (auto/),
     NOT the content_list JSON files at the root level.
 
     Args:
@@ -245,7 +245,7 @@ async def cleanup_parser_output_dirs(
         Number of directories cleaned up
     """
     if parser_subdirs is None:
-        parser_subdirs = ["auto", "docling"]
+        parser_subdirs = ["auto"]
 
     cleaned_count = 0
 

@@ -7,7 +7,8 @@ import React, {
   useState,
   useCallback,
 } from "react";
-import { wsUrl } from "@/lib/api";
+import { wsUrl, ensureFreshTokenForWs } from "@/lib/api";
+import { refreshAccessToken } from "@/lib/auth";
 import {
   QuestionContextState,
   QuestionProgressInfo,
@@ -235,7 +236,7 @@ export function QuestionProvider({ children }: { children: React.ReactNode }) {
   );
 
   const startQuestionGen = useCallback(
-    (topic: string, diff: string, type: string, count: number, kb: string) => {
+    async (topic: string, diff: string, type: string, count: number, kb: string) => {
       if (questionWs.current) questionWs.current.close();
 
       setQuestionState((prev) => ({
@@ -261,8 +262,12 @@ export function QuestionProvider({ children }: { children: React.ReactNode }) {
         tokenStats: { ...DEFAULT_QUESTION_TOKEN_STATS },
       }));
 
+      // Ensure token is fresh before connecting
+      await ensureFreshTokenForWs();
+
       const ws = new WebSocket(wsUrl("/api/v1/question/generate"));
       questionWs.current = ws;
+      let retried = false;
 
       ws.onopen = () => {
         ws.send(
@@ -506,7 +511,17 @@ export function QuestionProvider({ children }: { children: React.ReactNode }) {
         }));
       };
 
-      ws.onclose = () => {
+      ws.onclose = async (event) => {
+        // Retry once on auth failure (code 1008)
+        if (event.code === 1008 && !retried) {
+          retried = true;
+          const newToken = await refreshAccessToken();
+          if (newToken) {
+            setQuestionState((prev) => ({ ...prev, step: "config" }));
+            startQuestionGen(topic, diff, type, count, kb);
+            return;
+          }
+        }
         if (questionWs.current === ws) {
           questionWs.current = null;
         }
@@ -553,8 +568,12 @@ export function QuestionProvider({ children }: { children: React.ReactNode }) {
         tokenStats: { ...DEFAULT_QUESTION_TOKEN_STATS },
       }));
 
+      // Ensure token is fresh before connecting
+      await ensureFreshTokenForWs();
+
       const ws = new WebSocket(wsUrl("/api/v1/question/mimic"));
       questionWs.current = ws;
+      let retried = false;
 
       ws.onopen = async () => {
         if (hasFile && file) {
@@ -607,6 +626,22 @@ export function QuestionProvider({ children }: { children: React.ReactNode }) {
           content: "WebSocket connection error",
         });
         setQuestionState((prev) => ({ ...prev, step: "config" }));
+      };
+
+      ws.onclose = async (event) => {
+        // Retry once on auth failure (code 1008)
+        if (event.code === 1008 && !retried) {
+          retried = true;
+          const newToken = await refreshAccessToken();
+          if (newToken) {
+            setQuestionState((prev) => ({ ...prev, step: "config" }));
+            startMimicQuestionGen(file, paperPath, kb, maxQuestions);
+            return;
+          }
+        }
+        if (questionWs.current === ws) {
+          questionWs.current = null;
+        }
       };
     },
     [addQuestionLog, handleMimicWsMessage],

@@ -14,31 +14,21 @@ def _write_yaml(path: Path, data: dict) -> None:
 def test_storage_settings_env_override(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     _write_yaml(
         tmp_path / "config" / "main.yaml",
-        {"storage": {"backend": "file", "sqlite_path": "./data/db/test.sqlite", "auto_migrate": True}},
+        {"storage": {"postgres_dsn": "", "auto_migrate": True}},
     )
 
-    monkeypatch.setenv("DEEPTUTOR_STORAGE_BACKEND", "postgres")
     monkeypatch.setenv(
         "DEEPTUTOR_POSTGRES_DSN",
         "postgresql://user:pass@localhost:5432/deeptutor_test",
     )
 
     settings = get_storage_settings(project_root=tmp_path)
-    assert settings.backend == "postgres"
     assert settings.postgres_dsn == "postgresql://user:pass@localhost:5432/deeptutor_test"
 
 
 def test_get_user_db_postgres_requires_dsn(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    _write_yaml(tmp_path / "config" / "main.yaml", {"storage": {"backend": "postgres"}})
+    _write_yaml(tmp_path / "config" / "main.yaml", {"storage": {}})
     monkeypatch.delenv("DEEPTUTOR_POSTGRES_DSN", raising=False)
-    monkeypatch.delenv("DEEPTUTOR_STORAGE_BACKEND", raising=False)
 
     with pytest.raises(ValueError):
         get_user_db(project_root=tmp_path)
-
-
-def test_storage_backend_normalization(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    _write_yaml(tmp_path / "config" / "main.yaml", {"storage": {"backend": "pg"}})
-    monkeypatch.delenv("DEEPTUTOR_STORAGE_BACKEND", raising=False)
-    settings = get_storage_settings(project_root=tmp_path)
-    assert settings.backend == "postgres"

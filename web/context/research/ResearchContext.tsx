@@ -7,7 +7,8 @@ import React, {
   useState,
   useCallback,
 } from "react";
-import { wsUrl } from "@/lib/api";
+import { wsUrl, ensureFreshTokenForWs } from "@/lib/api";
+import { refreshAccessToken } from "@/lib/auth";
 import {
   ResearchContextState,
   ResearchProgress,
@@ -45,7 +46,7 @@ export function ResearchProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const startResearch = useCallback(
-    (
+    async (
       topic: string,
       kb: string,
       planMode: string = "medium",
@@ -86,8 +87,12 @@ export function ResearchProvider({ children }: { children: React.ReactNode }) {
         },
       }));
 
+      // Ensure token is fresh before connecting
+      await ensureFreshTokenForWs();
+
       const ws = new WebSocket(wsUrl("/api/v1/research/run"));
       researchWs.current = ws;
+      let retried = false;
 
       ws.onopen = () => {
         ws.send(
@@ -199,7 +204,17 @@ export function ResearchProvider({ children }: { children: React.ReactNode }) {
         }));
       };
 
-      ws.onclose = () => {
+      ws.onclose = async (event) => {
+        // Retry once on auth failure (code 1008)
+        if (event.code === 1008 && !retried) {
+          retried = true;
+          const newToken = await refreshAccessToken();
+          if (newToken) {
+            setResearchState((prev) => ({ ...prev, status: "idle" }));
+            startResearch(topic, kb, planMode, enabledTools, skipRephrase);
+            return;
+          }
+        }
         if (researchWs.current === ws) {
           researchWs.current = null;
         }

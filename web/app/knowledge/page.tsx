@@ -45,7 +45,7 @@ import {
   AlertCircle,
   Star,
 } from "lucide-react";
-import { apiUrl, wsUrl } from "@/lib/api";
+import { apiUrl, wsUrl, ensureFreshTokenForWs } from "@/lib/api";
 import { useGlobal } from "@/context/GlobalContext";
 import { useTranslation } from "react-i18next";
 
@@ -658,7 +658,11 @@ export default function KnowledgePage() {
       ...wsConnectionsRef.current,
     };
 
-    kbs.forEach((kb) => {
+    // Ensure token is fresh before creating connections
+    const connectAll = async () => {
+      await ensureFreshTokenForWs();
+
+      kbs.forEach((kb) => {
       // Only create new connection if one doesn't exist
       if (
         connections[kb.name] &&
@@ -745,6 +749,9 @@ export default function KnowledgePage() {
       connections[kb.name] = ws;
       wsConnectionsRef.current[kb.name] = ws;
     });
+    };
+
+    connectAll();
 
     kbsNamesRef.current = kbs.map((kb) => kb.name);
   }, [kbs, loading]);
@@ -1604,13 +1611,10 @@ export default function KnowledgePage() {
                   {ragProvider === "llamaindex" && t("LlamaIndex")}
                   {ragProvider === "lightrag" && t("LightRAG")}
                   {ragProvider === "raganything" && t("RAG-Anything")}
-                  {ragProvider === "raganything_docling" &&
-                    t("RAG-Anything (Docling)")}
                   {![
                     "llamaindex",
                     "lightrag",
                     "raganything",
-                    "raganything_docling",
                   ].includes(ragProvider) && ragProvider}
                 </div>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">

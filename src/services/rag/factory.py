@@ -34,11 +34,6 @@ def _init_pipelines():
 
         return RAGAnythingPipeline(**kwargs)
 
-    def _build_raganything_docling(**kwargs):
-        from .pipelines.raganything_docling import RAGAnythingDoclingPipeline
-
-        return RAGAnythingDoclingPipeline(**kwargs)
-
     def _build_lightrag(kb_base_dir: Optional[str] = None, **kwargs):
         # LightRAGPipeline is a factory function returning a composed RAGPipeline
         from .pipelines.lightrag import LightRAGPipeline
@@ -55,7 +50,6 @@ def _init_pipelines():
     _PIPELINES.update(
         {
             "raganything": _build_raganything,  # Full multimodal: MinerU parser, deep analysis (slow, thorough)
-            "raganything_docling": _build_raganything_docling,  # Docling parser: Office/HTML friendly, easier setup
             "lightrag": _build_lightrag,  # Knowledge graph: PDFParser, fast text-only (medium speed)
             "llamaindex": _build_llamaindex,  # Vector-only: Simple chunking, fast (fastest)
         }
@@ -68,7 +62,7 @@ def get_pipeline(name: str = "raganything", kb_base_dir: Optional[str] = None, *
     Get a pre-configured pipeline by name.
 
     Args:
-        name: Pipeline name (raganything, raganything_docling, lightrag, llamaindex)
+        name: Pipeline name (raganything, lightrag, llamaindex)
         kb_base_dir: Base directory for knowledge bases (passed to all pipelines)
         **kwargs: Additional arguments passed to pipeline constructor
 
@@ -88,7 +82,7 @@ def get_pipeline(name: str = "raganything", kb_base_dir: Optional[str] = None, *
     try:
         # Handle different pipeline types:
         # - lightrag: callable that accepts kb_base_dir and returns a composed RAGPipeline
-        # - llamaindex, raganything, raganything_docling: callables that instantiate class-based pipelines
+        # - llamaindex, raganything: callables that instantiate class-based pipelines
         if name in ("lightrag",):
             return factory(kb_base_dir=kb_base_dir, **kwargs)
 
@@ -123,13 +117,8 @@ def list_pipelines() -> List[Dict[str, str]]:
         },
         {
             "id": "raganything",
-            "name": "RAG-Anything (MinerU)",
+            "name": "RAG-Anything",
             "description": "Multimodal document processing with MinerU parser. Best for academic PDFs with complex equations and formulas.",
-        },
-        {
-            "id": "raganything_docling",
-            "name": "RAG-Anything (Docling)",
-            "description": "Multimodal document processing with Docling parser. Better for Office documents (.docx, .pptx) and HTML. Easier to install.",
         },
     ]
 

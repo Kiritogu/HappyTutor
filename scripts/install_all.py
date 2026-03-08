@@ -164,7 +164,7 @@ def install_with_pip_staged(requirements_file: Path, project_root: Path) -> bool
 
     # Stage 3: Install raganything (includes lightrag-hku as dependency)
     print_info(
-        "Stage 3/4: Installing raganything (includes lightrag-hku, this may take a while)..."
+        "Stage 3/3: Installing raganything (includes lightrag-hku, this may take a while)..."
     )
     try:
         # First try normal install
@@ -193,23 +193,6 @@ def install_with_pip_staged(requirements_file: Path, project_root: Path) -> bool
                 print_warning("raganything installation had issues")
     except Exception as e:
         print_warning(f"raganything installation error: {e}")
-
-    # Stage 4: Install docling (alternative parser for Office/HTML documents)
-    print_info("Stage 4/4: Installing docling (document parser for Office/HTML)...")
-    try:
-        cmd = [sys.executable, "-m", "pip", "install", "docling>=2.31.0"]
-        result = subprocess.run(
-            cmd,
-            check=False,
-            cwd=project_root,
-            timeout=600,  # 10 minutes
-            capture_output=False,
-            text=True,
-        )
-        if result.returncode != 0:
-            print_warning("docling installation had issues (optional, can be skipped)")
-    except Exception as e:
-        print_warning(f"docling installation error (optional): {e}")
 
     # Try to install any remaining optional deps
     try:
@@ -547,7 +530,6 @@ def verify_installation(project_root: Path) -> bool:
         "lightrag_hku",
         "raganything",
         "llama_index",
-        "docling",
     ]
 
     for package in backend_packages:
@@ -557,18 +539,12 @@ def verify_installation(project_root: Path) -> bool:
                 __import__("lightrag")
             elif package == "raganything":
                 __import__("raganything")
-            elif package == "docling":
-                __import__("docling")
             else:
                 __import__(package)
             print_success(f"  ✓ {package}")
         except ImportError:
-            if package == "docling":
-                # docling is optional
-                print_warning(f"  ⚠ {package} not installed (optional, for Office/HTML parsing)")
-            else:
-                print_error(f"  ✗ {package} not installed")
-                all_ok = False
+            print_error(f"  ✗ {package} not installed")
+            all_ok = False
 
     # Check frontend node_modules
     print_info("Checking frontend dependencies...")

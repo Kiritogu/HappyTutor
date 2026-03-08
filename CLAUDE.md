@@ -10,7 +10,7 @@ DeepTutor 是一个 AI 驱动的个性化学习助手，采用多代理架构。
 
 - **Backend**: Python 3.10+, FastAPI, LangChain + LangGraph, LlamaIndex
 - **Frontend**: Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS
-- **Database**: PostgreSQL / SQLite（可配置）
+- **Database**: PostgreSQL
 - **LLM Providers**: OpenAI, Anthropic, Dashscope, Perplexity
 
 ## Common Commands
@@ -95,7 +95,7 @@ src/
 │   ├── llm/          # LLM orchestration (LangChain-based)
 │   ├── rag/          # RAG services
 │   ├── prompt/       # Prompt management
-│   ├── storage/      # PostgreSQL/SQLite user data storage (NEW)
+│   ├── storage/      # PostgreSQL user data storage
 │   └── warmup.py     # Application warmup service
 ├── tools/            # Tool implementations
 ├── knowledge/        # Knowledge base management
@@ -104,8 +104,15 @@ src/
 web/
 ├── app/              # Next.js App Router pages
 ├── components/       # React components
-├── context/          # Global state (GlobalContext.tsx)
-└── lib/              # Utilities (api.ts)
+├── context/          # State providers
+│   ├── GlobalContext.tsx      # Legacy monolithic context (being split)
+│   ├── AuthContext.tsx        # Auth state + fetch interceptor (401 → refresh → retry)
+│   ├── chat/ChatContext.tsx   # Chat WebSocket state
+│   ├── research/ResearchContext.tsx  # Research pipeline state
+│   └── question/QuestionContext.tsx  # Question generation state
+└── lib/              # Utilities
+    ├── api.ts        # API/WebSocket URL helpers, ensureFreshTokenForWs()
+    └── auth.ts       # Token storage, JWT decode, refreshAccessToken()
 
 config/
 ├── main.yaml         # Main system configuration
@@ -124,7 +131,7 @@ config/
    - `AgentConfigResolver`: Configuration management
    - `LLMOrchestrator`: LLM call orchestration
    - `PromptManager`: YAML-based prompt loading
-   - `StorageService`: PostgreSQL/SQLite user data persistence
+   - `StorageService`: PostgreSQL user data persistence
 
 3. **LangGraph Workflows** (Research Module)
    - Uses LangGraph for agent orchestration
@@ -152,19 +159,19 @@ config/
 
 ## Storage Backend (PostgreSQL)
 
-The `feature/postgres-storage` branch adds PostgreSQL support:
+PostgreSQL is the storage backend for structured user data:
 
 ```yaml
 # config/main.yaml
 storage:
-  backend: postgres  # file | sqlite | postgres
+  backend: postgres
   postgres_dsn: ""
   auto_migrate: true
 ```
 
 Key files:
 - `src/services/storage/postgres_db.py`: PostgreSQL backend
-- `src/services/storage/user_db.py`: Unified user data interface
+- `src/services/storage/user_db.py`: Storage settings and factory
 
 ## Data Directory
 
@@ -179,7 +186,6 @@ data/
 │   ├── guide/
 │   ├── notebook/
 │   └── logs/
-└── db/                 # SQLite database
 ```
 
 ## Code Style (Python)
@@ -196,3 +202,5 @@ Configured in `pyproject.toml`:
 2. **Prompts**: Stored in YAML files per agent, loaded via `PromptManager`
 3. **WebSocket Streaming**: Use `LogInterceptor` for streaming logs in WebSocket handlers
 4. **LLM Calls**: All LLM calls should go through `LLMOrchestrator` for consistency
+5. **WebSocket Auth**: All WebSocket connections must call `await ensureFreshTokenForWs()` before `new WebSocket(wsUrl(...))`, and handle close code 1008 with a single retry via `refreshAccessToken()`. See `web/context/chat/ChatContext.tsx` for the reference pattern.
+6. **Token Refresh**: `refreshAccessToken()` in `web/lib/auth.ts` uses singleton deduplication (`_refreshPromise`) — safe to call concurrently from multiple WebSocket handlers without consuming the one-time-use refresh token multiple times.

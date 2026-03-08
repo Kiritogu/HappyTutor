@@ -10,6 +10,7 @@ import {
   getAccessToken,
   getRefreshToken,
   getStoredUser,
+  refreshAccessToken,
   setAuthSession,
   tryServerLogout,
 } from "@/lib/auth";
@@ -76,28 +77,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     let refreshPromise: Promise<string | null> | null = null;
 
     async function tryRefreshToken(): Promise<string | null> {
-      const refreshToken = getRefreshToken();
-      if (!refreshToken) {
-        return null;
-      }
-
-      try {
-        const response = await originalFetch(apiUrl("/api/v1/auth/refresh"), {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ refresh_token: refreshToken }),
-        });
-
-        if (!response.ok) {
-          return null;
+      const token = await refreshAccessToken();
+      if (token) {
+        // Sync React state with the session updated by refreshAccessToken
+        const storedUser = getStoredUser();
+        if (storedUser) {
+          applySessionRef.current({
+            access_token: token,
+            refresh_token: getRefreshToken() || "",
+            token_type: "bearer",
+            expires_in: 900,
+            user: storedUser,
+          });
         }
-
-        const session = (await response.json()) as AuthSession;
-        applySessionRef.current(session);
-        return session.access_token;
-      } catch {
-        return null;
       }
+      return token;
     }
 
     function refreshOnce(): Promise<string | null> {
@@ -349,4 +343,3 @@ export function useAuth(): AuthContextValue {
   }
   return context;
 }
-

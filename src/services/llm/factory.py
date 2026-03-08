@@ -220,9 +220,8 @@ async def complete(
         try:
             provider = _get_langchain_provider()
             if provider:
-                # Initialize cache with configured path
-                cache_path = getattr(config, "cache_path", ".cache/llm_cache.db")
-                provider.init_cache(cache_path)
+                # Initialize in-memory cache
+                provider.init_cache()
 
                 # Call LangChain provider
                 return await provider.complete(
@@ -412,9 +411,8 @@ async def stream(
         try:
             provider = _get_langchain_provider()
             if provider:
-                # Initialize cache with configured path
-                cache_path = getattr(config, "cache_path", ".cache/llm_cache.db")
-                provider.init_cache(cache_path)
+                # Initialize in-memory cache
+                provider.init_cache()
 
                 # Stream from LangChain provider
                 async for chunk in provider.stream(

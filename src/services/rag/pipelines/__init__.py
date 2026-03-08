@@ -10,7 +10,6 @@ from typing import Any
 
 __all__ = [
     "RAGAnythingPipeline",
-    "RAGAnythingDoclingPipeline",
     "LightRAGPipeline",
 ]
 
@@ -29,10 +28,6 @@ def __getattr__(name: str) -> Any:
         from .raganything import RAGAnythingPipeline
 
         return RAGAnythingPipeline
-    if name == "RAGAnythingDoclingPipeline":
-        from .raganything_docling import RAGAnythingDoclingPipeline
-
-        return RAGAnythingDoclingPipeline
     if name == "LlamaIndexPipeline":
         # Optional dependency: llama_index
         from .llamaindex import LlamaIndexPipeline

@@ -10,18 +10,16 @@ This module handles:
 - Deleting sessions
 """
 
-import json
 from pathlib import Path
-import time
 from typing import Any
-import uuid
+
+from src.services.storage import get_user_db
 
 
 class SessionManager:
     """
-    Manages persistent storage of chat sessions.
+    Manages persistent storage of chat sessions via PostgreSQL.
 
-    Sessions are stored in a JSON file at data/user/chat_sessions.json.
     Each session contains:
     - session_id: Unique identifier
     - title: Session title (usually first user message)
@@ -36,7 +34,7 @@ class SessionManager:
         Initialize SessionManager.
 
         Args:
-            base_dir: Base directory for session storage.
+            base_dir: Base directory for output files.
                      Defaults to project_root/data/user
         """
         project_root = Path(__file__).resolve().parents[3]
@@ -51,52 +49,9 @@ class SessionManager:
         self.base_dir = base_dir_path
         self.base_dir.mkdir(parents=True, exist_ok=True)
 
-        self.sessions_file = self.base_dir / "chat_sessions.json"
+        from src.services.storage import get_user_db
 
-        # Optional SQLite backend (configured via env or config/main.yaml)
-        self._db = None
-        try:
-            from src.services.storage import get_user_db
-
-            self._db = get_user_db(project_root=project_root)
-        except Exception:
-            self._db = None
-
-        if self._db is None:
-            self._ensure_file()
-
-    def _ensure_file(self):
-        """Ensure the sessions file exists with correct format."""
-        if not self.sessions_file.exists():
-            initial_data = {
-                "version": "1.0",
-                "sessions": [],
-            }
-            self._save_data(initial_data)
-
-    def _load_data(self) -> dict[str, Any]:
-        """Load sessions data from file."""
-        try:
-            with open(self.sessions_file, encoding="utf-8") as f:
-                return json.load(f)
-        except (json.JSONDecodeError, FileNotFoundError):
-            return {"version": "1.0", "sessions": []}
-
-    def _save_data(self, data: dict[str, Any]):
-        """Save sessions data to file."""
-        with open(self.sessions_file, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
-
-    def _get_sessions(self) -> list[dict[str, Any]]:
-        """Get list of all sessions."""
-        data = self._load_data()
-        return data.get("sessions", [])
-
-    def _save_sessions(self, sessions: list[dict[str, Any]]):
-        """Save sessions list."""
-        data = self._load_data()
-        data["sessions"] = sessions
-        self._save_data(data)
+        self._db = get_user_db(project_root=project_root)
 
     def create_session(
         self,
@@ -115,32 +70,7 @@ class SessionManager:
         Returns:
             New session dict with session_id
         """
-        if self._db is not None:
-            return self._db.chat_create_session(user_id=user_id, title=title, settings=settings)
-
-        session_id = f"chat_{int(time.time() * 1000)}_{uuid.uuid4().hex[:8]}"
-        now = time.time()
-
-        session = {
-            "session_id": session_id,
-            "title": title[:100],  # Limit title length
-            "messages": [],
-            "settings": settings or {},
-            "created_at": now,
-            "updated_at": now,
-        }
-
-        sessions = self._get_sessions()
-        sessions.insert(0, session)  # Add to front (newest first)
-
-        # Limit total sessions to prevent file bloat
-        max_sessions = 100
-        if len(sessions) > max_sessions:
-            sessions = sessions[:max_sessions]
-
-        self._save_sessions(sessions)
-
-        return session
+        return self._db.chat_create_session(user_id=user_id, title=title, settings=settings)
 
     def get_session(self, *, user_id: str, session_id: str) -> dict[str, Any] | None:
         """
@@ -152,14 +82,7 @@ class SessionManager:
         Returns:
             Session dict or None if not found
         """
-        if self._db is not None:
-            return self._db.chat_get_session(user_id=user_id, session_id=session_id)
-
-        sessions = self._get_sessions()
-        for session in sessions:
-            if session.get("session_id") == session_id:
-                return session
-        return None
+        return self._db.chat_get_session(user_id=user_id, session_id=session_id)
 
     def update_session(
         self,
@@ -182,36 +105,13 @@ class SessionManager:
         Returns:
             Updated session or None if not found
         """
-        if self._db is not None:
-            return self._db.chat_update_session(
-                session_id,
-                user_id=user_id,
-                messages=messages,
-                title=title,
-                settings=settings,
-            )
-
-        sessions = self._get_sessions()
-
-        for i, session in enumerate(sessions):
-            if session.get("session_id") == session_id:
-                if messages is not None:
-                    session["messages"] = messages
-                if title is not None:
-                    session["title"] = title[:100]
-                if settings is not None:
-                    session["settings"] = settings
-
-                session["updated_at"] = time.time()
-
-                # Move to front (most recently updated)
-                sessions.pop(i)
-                sessions.insert(0, session)
-
-                self._save_sessions(sessions)
-                return session
-
-        return None
+        return self._db.chat_update_session(
+            session_id,
+            user_id=user_id,
+            messages=messages,
+            title=title,
+            settings=settings,
+        )
 
     def add_message(
         self,
@@ -234,41 +134,13 @@ class SessionManager:
         Returns:
             Updated session or None if not found
         """
-        if self._db is not None:
-            return self._db.chat_add_message(
-                user_id=user_id,
-                session_id=session_id,
-                role=role,
-                content=content,
-                sources=sources,
-            )
-
-        session = self.get_session(user_id=user_id, session_id=session_id)
-        if not session:
-            return None
-
-        message = {
-            "role": role,
-            "content": content,
-            "timestamp": time.time(),
-        }
-        if sources:
-            message["sources"] = sources
-
-        messages = session.get("messages", [])
-        messages.append(message)
-
-        # Update title from first user message if still default
-        if session.get("title") == "New Chat" and role == "user":
-            new_title = content[:50] + ("..." if len(content) > 50 else "")
-            return self.update_session(
-                user_id=user_id,
-                session_id=session_id,
-                messages=messages,
-                title=new_title,
-            )
-
-        return self.update_session(user_id=user_id, session_id=session_id, messages=messages)
+        return self._db.chat_add_message(
+            user_id=user_id,
+            session_id=session_id,
+            role=role,
+            content=content,
+            sources=sources,
+        )
 
     def list_sessions(
         self,
@@ -287,36 +159,11 @@ class SessionManager:
         Returns:
             List of session dicts (newest first)
         """
-        if self._db is not None:
-            return self._db.chat_list_sessions(
-                user_id=user_id,
-                limit=limit,
-                include_messages=include_messages,
-            )
-
-        sessions = self._get_sessions()[:limit]
-
-        if not include_messages:
-            # Return summary only (without full messages)
-            return [
-                {
-                    "session_id": s.get("session_id"),
-                    "title": s.get("title"),
-                    "message_count": len(s.get("messages", [])),
-                    "settings": s.get("settings"),
-                    "created_at": s.get("created_at"),
-                    "updated_at": s.get("updated_at"),
-                    # Include preview of last message
-                    "last_message": (
-                        s.get("messages", [])[-1].get("content", "")[:100]
-                        if s.get("messages")
-                        else ""
-                    ),
-                }
-                for s in sessions
-            ]
-
-        return sessions
+        return self._db.chat_list_sessions(
+            user_id=user_id,
+            limit=limit,
+            include_messages=include_messages,
+        )
 
     def delete_session(self, *, user_id: str, session_id: str) -> bool:
         """
@@ -328,19 +175,7 @@ class SessionManager:
         Returns:
             True if deleted, False if not found
         """
-        if self._db is not None:
-            return self._db.chat_delete_session(user_id=user_id, session_id=session_id)
-
-        sessions = self._get_sessions()
-        original_count = len(sessions)
-
-        sessions = [s for s in sessions if s.get("session_id") != session_id]
-
-        if len(sessions) < original_count:
-            self._save_sessions(sessions)
-            return True
-
-        return False
+        return self._db.chat_delete_session(user_id=user_id, session_id=session_id)
 
     def clear_all_sessions(self, *, user_id: str) -> int:
         """
@@ -349,13 +184,7 @@ class SessionManager:
         Returns:
             Number of sessions deleted
         """
-        if self._db is not None:
-            return self._db.chat_clear_all_sessions(user_id=user_id)
-
-        sessions = self._get_sessions()
-        count = len(sessions)
-        self._save_sessions([])
-        return count
+        return self._db.chat_clear_all_sessions(user_id=user_id)
 
 
 # Singleton instance for convenience
