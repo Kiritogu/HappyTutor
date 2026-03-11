@@ -168,6 +168,7 @@ class RAGAnythingPipeline:
             total_files = len(classification.needs_mineru) + len(classification.text_files)
             idx = 0
             total_images_migrated = 0
+            neo4j_docs: list[dict[str, str]] = []
 
             # Process files requiring MinerU (PDF, DOCX, images)
             for file_path in classification.needs_mineru:
@@ -205,6 +206,19 @@ class RAGAnythingPipeline:
                     file_path=file_path,
                     doc_id=doc_id,
                 )
+                text_parts = [
+                    str(item.get("text") or item.get("content") or "").strip()
+                    for item in updated_content_list
+                    if isinstance(item, dict)
+                ]
+                neo4j_docs.append(
+                    {
+                        "doc_id": str(doc_id),
+                        "path": str(file_path),
+                        "title": Path(file_path).name,
+                        "text": "\n".join([p for p in text_parts if p]),
+                    }
+                )
 
                 self.logger.info(f"  ✓ Completed: {file_name}")
 
@@ -218,6 +232,14 @@ class RAGAnythingPipeline:
                 if content.strip():
                     # Insert directly into LightRAG, bypassing MinerU
                     await rag.lightrag.ainsert(content)
+                    neo4j_docs.append(
+                        {
+                            "doc_id": str(file_path),
+                            "path": str(file_path),
+                            "title": Path(file_path).name,
+                            "text": content,
+                        }
+                    )
 
             # Log unsupported files
             for file_path in classification.unsupported:
@@ -227,6 +249,10 @@ class RAGAnythingPipeline:
             if total_images_migrated > 0:
                 self.logger.info("Cleaning up temporary parser output directories...")
                 await cleanup_parser_output_dirs(content_list_dir)
+
+        from src.services.graph_store.adapters import RAGAnythingNeo4jAdapter
+
+        await RAGAnythingNeo4jAdapter.ingest_documents(kb_name=kb_name, documents=neo4j_docs)
 
         if extract_numbered_items:
             await self._extract_numbered_items(kb_name)

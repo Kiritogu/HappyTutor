@@ -678,10 +678,9 @@ async def websocket_progress(websocket: WebSocket, kb_name: str):
         progress_tracker = ProgressTracker(kb_name, _kb_base_dir)
         initial_progress = progress_tracker.get_progress()
 
-        # Check if KB is already ready (has rag_storage)
-        kb_dir = _kb_base_dir / kb_name
-        rag_storage_dir = kb_dir / "rag_storage"
-        kb_is_ready = rag_storage_dir.exists() and rag_storage_dir.is_dir()
+        # Check if KB is ready from persisted status (no local rag_storage dependency).
+        kb_info = manager.get_kb_info(kb_name)
+        kb_is_ready = bool(kb_info.get("status") == "ready")
 
         # Only send non-completed progress if KB is not ready
         # or if progress is recent (within 5 minutes)

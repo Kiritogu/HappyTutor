@@ -78,8 +78,9 @@ class DocumentAdder:
             if not llamaindex_storage.exists():
                 raise ValueError(f"Knowledge base not initialized (llamaindex): {kb_name}")
         else:
-            if not self.rag_storage_dir.exists():
-                raise ValueError(f"Knowledge base not initialized: {kb_name}")
+            # Local rag_storage existence is no longer a hard requirement.
+            # Provider-specific pipelines are responsible for their own runtime state.
+            pass
 
         self.api_key = api_key
         self.base_url = base_url

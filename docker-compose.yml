@@ -9,6 +9,30 @@
 # ==============================================================
 
 services:
+  # ---------- Neo4j (RAG vector + graph store) ----------
+  neo4j:
+    image: neo4j:5.26
+    restart: unless-stopped
+    environment:
+      NEO4J_AUTH: ${NEO4J_AUTH:-neo4j/deeptutor_neo4j}
+      NEO4J_server_memory_heap_initial__size: ${NEO4J_HEAP_INIT:-512m}
+      NEO4J_server_memory_heap_max__size: ${NEO4J_HEAP_MAX:-1g}
+      NEO4J_server_memory_pagecache_size: ${NEO4J_PAGECACHE_SIZE:-512m}
+      NEO4J_server_config_strict__validation_enabled: "false"
+    ports:
+      - "7474:7474"
+      - "7687:7687"
+    volumes:
+      - ./data/neo4j/data:/data
+      - ./data/neo4j/logs:/logs
+      - ./data/neo4j/plugins:/plugins
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:7474 >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
   # ---------- FastAPI Backend ----------
   backend:
     build:
@@ -19,6 +43,9 @@ services:
     volumes:
       # Persist user data and knowledge bases outside container
       - ./data:/app/data
+    depends_on:
+      neo4j:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/api/v1/knowledge/health', timeout=5)"]
       interval: 30s

@@ -326,13 +326,9 @@ class KnowledgeBaseManager:
         # KB might not have a directory yet if still initializing
         dir_exists = kb_dir.exists()
 
-        # For old KBs without status field, determine status from rag_storage
+        # For old KBs without status field, keep unknown status and avoid local rag_storage probing.
         if not status and dir_exists:
-            rag_storage_dir = kb_dir / "rag_storage"
-            if rag_storage_dir.exists() and any(rag_storage_dir.iterdir()):
-                status = "ready"
-            else:
-                status = "unknown"
+            status = "unknown"
         elif not status:
             status = "unknown"
 
@@ -360,7 +356,6 @@ class KnowledgeBaseManager:
         raw_dir = kb_dir / "raw" if dir_exists else None
         images_dir = kb_dir / "images" if dir_exists else None
         content_list_dir = kb_dir / "content_list" if dir_exists else None
-        rag_storage_dir = kb_dir / "rag_storage" if dir_exists else None
 
         raw_count = 0
         images_count = 0
@@ -396,9 +391,7 @@ class KnowledgeBaseManager:
         if not rag_provider:
             rag_provider = kb_config.get("rag_provider")
 
-        rag_initialized = (
-            dir_exists and rag_storage_dir and rag_storage_dir.exists() and rag_storage_dir.is_dir()
-        )
+        rag_initialized = status == "ready"
 
         info["statistics"] = {
             "raw_documents": raw_count,
@@ -411,52 +404,7 @@ class KnowledgeBaseManager:
             "progress": progress,
         }
 
-        # Try to get RAG statistics
-        if rag_initialized:
-            try:
-                entities_file = rag_storage_dir / "kv_store_full_entities.json"
-                relations_file = rag_storage_dir / "kv_store_full_relations.json"
-                chunks_file = rag_storage_dir / "kv_store_text_chunks.json"
-
-                rag_stats = {}
-                if entities_file.exists():
-                    try:
-                        with open(entities_file, encoding="utf-8") as f:
-                            entities_data = json.load(f)
-                            rag_stats["entities"] = (
-                                len(entities_data) if isinstance(entities_data, (list, dict)) else 0
-                            )
-                    except Exception:
-                        pass
-
-                if relations_file.exists():
-                    try:
-                        with open(relations_file, encoding="utf-8") as f:
-                            relations_data = json.load(f)
-                            rag_stats["relations"] = (
-                                len(relations_data)
-                                if isinstance(relations_data, (list, dict))
-                                else 0
-                            )
-                    except Exception:
-                        pass
-
-                if chunks_file.exists():
-                    try:
-                        with open(chunks_file, encoding="utf-8") as f:
-                            chunks_data = json.load(f)
-                            rag_stats["chunks"] = (
-                                len(chunks_data) if isinstance(chunks_data, (list, dict)) else 0
-                            )
-                    except Exception:
-                        pass
-
-                if rag_stats:
-                    statistics = info["statistics"]
-                    if isinstance(statistics, dict):
-                        statistics["rag"] = rag_stats
-            except Exception:
-                pass
+        # Neo4j owns RAG runtime storage now; local rag_storage statistics are removed.
 
         return info
 

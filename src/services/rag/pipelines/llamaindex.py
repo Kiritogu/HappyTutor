@@ -185,6 +185,26 @@ class LlamaIndexPipeline:
             index.storage_context.persist(persist_dir=str(storage_dir))
             self.logger.info(f"Index persisted to {storage_dir}")
 
+            # Write vector artifacts to unified Neo4j store (llamaindex: vector only).
+            try:
+                from src.services.graph_store.adapters import LlamaIndexNeo4jAdapter
+
+                await LlamaIndexNeo4jAdapter.ingest_documents(
+                    kb_name=kb_name,
+                    documents=[
+                        {
+                            "doc_id": d.metadata.get("file_path") or d.metadata.get("file_name"),
+                            "path": d.metadata.get("file_path", ""),
+                            "title": d.metadata.get("file_name", ""),
+                            "text": d.text,
+                        }
+                        for d in documents
+                    ],
+                )
+            except Exception as e:
+                self.logger.error(f"Neo4j ingestion failed for llamaindex KB '{kb_name}': {e}")
+                raise
+
             self.logger.info(f"KB '{kb_name}' initialized successfully with LlamaIndex")
             return True
 

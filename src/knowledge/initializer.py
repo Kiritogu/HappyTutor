@@ -149,7 +149,6 @@ class KnowledgeBaseInitializer:
         for dir_path in [
             self.raw_dir,
             self.images_dir,
-            self.rag_storage_dir,
             self.content_list_dir,
         ]:
             dir_path.mkdir(parents=True, exist_ok=True)
@@ -465,30 +464,10 @@ class KnowledgeBaseInitializer:
             except Exception:
                 pass
 
-        # RAGAnything/LightRAG format
-        entities_file = self.rag_storage_dir / "kv_store_full_entities.json"
-        relations_file = self.rag_storage_dir / "kv_store_full_relations.json"
-        chunks_file = self.rag_storage_dir / "kv_store_text_chunks.json"
-
         # LlamaIndex format
         vector_store_dir = self.base_dir / self.kb_name / "vector_store"
 
         try:
-            if entities_file.exists():
-                with open(entities_file, encoding="utf-8") as f:
-                    entities = json.load(f)
-                    logger.info(f"Knowledge entities: {len(entities)}")
-
-            if relations_file.exists():
-                with open(relations_file, encoding="utf-8") as f:
-                    relations = json.load(f)
-                    logger.info(f"Knowledge relations: {len(relations)}")
-
-            if chunks_file.exists():
-                with open(chunks_file, encoding="utf-8") as f:
-                    chunks = json.load(f)
-                    logger.info(f"Text chunks: {len(chunks)}")
-
             if vector_store_dir.exists():
                 metadata_file = vector_store_dir / "metadata.json"
                 if metadata_file.exists():

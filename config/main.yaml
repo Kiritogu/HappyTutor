@@ -4,6 +4,12 @@ storage:
   backend: postgres
   postgres_dsn: ""
   auto_migrate: true
+neo4j:
+  uri: ""
+  user: ""
+  password: ""
+  database: neo4j
+  max_connection_pool_size: 50
 paths:
   user_data_dir: ./data/user
   knowledge_bases_dir: ./data/knowledge_bases

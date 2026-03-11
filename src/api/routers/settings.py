@@ -19,7 +19,7 @@ router = APIRouter()
 # Default sidebar navigation order
 DEFAULT_SIDEBAR_NAV_ORDER = {
     "start": ["/", "/history", "/knowledge", "/notebook"],
-    "learnResearch": ["/question", "/solver", "/guide", "/ideagen", "/research", "/co_writer"],
+    "learnResearch": ["/question", "/solver", "/guide", "/ideagen", "/research", "/graph", "/co_writer"],
 }
 
 # Default UI settings

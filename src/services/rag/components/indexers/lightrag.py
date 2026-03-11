@@ -113,5 +113,21 @@ class LightRAGIndexer(BaseComponent):
                     # Use direct LightRAG insert (text-only, fast)
                     await rag.ainsert(doc.content)
 
+        # Also persist unified vector+graph projection into Neo4j contract.
+        from src.services.graph_store.adapters import LightRAGNeo4jAdapter
+
+        await LightRAGNeo4jAdapter.ingest_documents(
+            kb_name=kb_name,
+            documents=[
+                {
+                    "doc_id": d.file_path or d.metadata.get("filename", ""),
+                    "path": d.file_path,
+                    "title": d.metadata.get("filename", ""),
+                    "text": d.content,
+                }
+                for d in documents
+            ],
+        )
+
         self.logger.info("Knowledge graph built successfully (text-only)")
         return True

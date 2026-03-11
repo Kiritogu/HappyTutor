@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional
 from src.logging import get_logger
 
 from .factory import get_pipeline, has_pipeline, list_pipelines
+from src.services.graph_store.query_orchestrator import GraphQueryOrchestrator
 
 # Default knowledge base directory
 DEFAULT_KB_BASE_DIR = str(
@@ -60,6 +61,7 @@ class RAGService:
         self.kb_base_dir = kb_base_dir or DEFAULT_KB_BASE_DIR
         self.provider = provider or os.getenv("RAG_PROVIDER", "raganything")
         self._pipeline = None
+        self._graph_orchestrator: GraphQueryOrchestrator | None = None
 
     def _get_pipeline(self):
         """Get or create pipeline instance."""
@@ -119,10 +121,17 @@ class RAGService:
             f"Searching KB '{kb_name}' with provider '{provider}' and query: {query[:50]}..."
         )
 
-        # Get pipeline for the specific provider
-        pipeline = get_pipeline(provider, kb_base_dir=self.kb_base_dir)
+        if self._graph_orchestrator is None:
+            self._graph_orchestrator = GraphQueryOrchestrator()
 
-        result = await pipeline.search(query=query, kb_name=kb_name, mode=mode, **kwargs)
+        top_k = int(kwargs.get("top_k", 5))
+        result = await self._graph_orchestrator.query(
+            query=query,
+            kb_name=kb_name,
+            provider=provider,
+            mode=mode,
+            top_k=top_k,
+        )
 
         # Ensure consistent return format
         if "query" not in result:

@@ -11,6 +11,7 @@ from src.api.routers import (
     chat,
     config,
     dashboard,
+    graph,
     guide,
     knowledge,
     notebook,
@@ -20,6 +21,8 @@ from src.api.routers import (
     system,
 )
 from src.logging import get_logger
+from src.services.graph_store.neo4j_client import Neo4jClient, load_graph_store_settings
+from src.services.graph_store.schema import ensure_schema, verify_vector_index
 
 # Note: Don't set service_prefix here - start_web.py already adds [Backend] prefix
 logger = get_logger("API")
@@ -46,6 +49,23 @@ async def lifespan(app: FastAPI):
         logger.error(f"Storage initialization failed: {e}")
         raise
 
+    # Initialize Neo4j graph store and fail fast if unavailable.
+    neo4j_client = None
+    try:
+        graph_settings = load_graph_store_settings(project_root=project_root)
+        neo4j_client = Neo4jClient(graph_settings)
+        neo4j_client.connect()
+        neo4j_client.verify_connectivity()
+        ensure_schema(neo4j_client)
+        verify_vector_index(neo4j_client)
+        logger.info("Neo4j graph store initialized")
+        app.state.neo4j_client = neo4j_client
+    except Exception as e:
+        logger.error(f"Neo4j initialization failed: {e}")
+        if neo4j_client is not None:
+            neo4j_client.close()
+        raise
+
     # Initialize LLM client early to set environment variables for LightRAG
     # LightRAG reads OPENAI_API_KEY from os.environ internally, so we must
     # set it before any RAG operations can happen
@@ -70,6 +90,9 @@ async def lifespan(app: FastAPI):
     yield
     # Execute on shutdown
     logger.info("Application shutdown")
+    neo4j_client = getattr(app.state, "neo4j_client", None)
+    if neo4j_client:
+        neo4j_client.close()
 
 
 app = FastAPI(
@@ -124,6 +147,7 @@ app.include_router(settings.router, prefix="/api/v1/settings", tags=["settings"]
 app.include_router(system.router, prefix="/api/v1/system", tags=["system"])
 app.include_router(config.router, prefix="/api/v1/config", tags=["config"])
 app.include_router(agent_config.router, prefix="/api/v1/agent-config", tags=["agent-config"])
+app.include_router(graph.router, prefix="/api/v1/graph", tags=["graph"])
 
 
 @app.get("/")
