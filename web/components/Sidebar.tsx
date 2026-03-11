@@ -12,6 +12,7 @@ import {
   PenTool,
   Calculator,
   Microscope,
+  Network,
   Edit3,
   Settings,
   Book,
@@ -43,6 +44,7 @@ const ALL_NAV_ITEMS: Record<string, { icon: LucideIcon; nameKey: string }> = {
   "/question": { icon: PenTool, nameKey: "Question Generator" },
   "/guide": { icon: GraduationCap, nameKey: "Guided Learning" },
   "/research": { icon: Microscope, nameKey: "Deep Research" },
+  "/graph": { icon: Network, nameKey: "Graph Explorer" },
 };
 
 export default function Sidebar() {
