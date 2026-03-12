@@ -631,7 +631,6 @@ export function GlobalProvider({ children }: { children: React.ReactNode }) {
       "/guide",
       "/ideagen",
       "/research",
-      "/graph",
       "/co_writer",
     ],
   };

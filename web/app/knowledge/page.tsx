@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import cytoscape, { type Core, type ElementDefinition } from "cytoscape";
 
 // Type declarations for FileSystem Entry API (drag & drop folder support)
 interface FileSystemEntry {
@@ -44,8 +45,10 @@ import {
   CheckCircle2,
   AlertCircle,
   Star,
+  Network,
 } from "lucide-react";
 import { apiUrl, wsUrl, ensureFreshTokenForWs } from "@/lib/api";
+import { getAccessToken } from "@/lib/auth";
 import { useGlobal } from "@/context/GlobalContext";
 import { useTranslation } from "react-i18next";
 
@@ -90,6 +93,26 @@ interface UploadFile {
   size: number;
 }
 
+type GraphNode = {
+  id: string;
+  label: string;
+  type: string;
+  score?: number;
+};
+
+type GraphEdge = {
+  source: string;
+  target: string;
+  relation: string;
+  weight?: number;
+};
+
+type GraphPayload = {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  truncated: boolean;
+};
+
 export default function KnowledgePage() {
   const { t } = useTranslation();
   const [kbs, setKbs] = useState<KnowledgeBase[]>([]);
@@ -109,12 +132,42 @@ export default function KnowledgePage() {
   const [progressMap, setProgressMap] = useState<Record<string, ProgressInfo>>(
     {},
   );
+  const [graphModalOpen, setGraphModalOpen] = useState(false);
+  const [graphKbName, setGraphKbName] = useState("");
+  const [graphQuery, setGraphQuery] = useState("");
+  const [graphHops, setGraphHops] = useState(2);
+  const [graphLimit, setGraphLimit] = useState(120);
+  const [graphLoading, setGraphLoading] = useState(false);
+  const [graphError, setGraphError] = useState("");
+  const [graphData, setGraphData] = useState<GraphPayload>({
+    nodes: [],
+    edges: [],
+    truncated: false,
+  });
+  const graphCanvasRef = useRef<HTMLDivElement | null>(null);
+  const graphCyRef = useRef<Core | null>(null);
 
   // Toast notification system
   const [toast, setToast] = useState<{
     message: string;
     type: "success" | "error" | "info";
   } | null>(null);
+
+  const graphElements = useMemo<ElementDefinition[]>(() => {
+    const nodes = graphData.nodes.map((n) => ({
+      data: { id: n.id, label: n.label, type: n.type, score: n.score ?? 0 },
+    }));
+    const edges = graphData.edges.map((e, idx) => ({
+      data: {
+        id: `${e.source}-${e.target}-${idx}`,
+        source: e.source,
+        target: e.target,
+        relation: e.relation,
+        weight: e.weight ?? 1,
+      },
+    }));
+    return [...nodes, ...edges];
+  }, [graphData.edges, graphData.nodes]);
 
   // Helper function to generate unique ID
   const generateFileId = () => Math.random().toString(36).substring(2, 15);
@@ -955,6 +1008,110 @@ export default function KnowledgePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- Helper functions are stable
   }, []);
 
+  useEffect(() => {
+    if (!graphModalOpen || !graphCanvasRef.current) return;
+
+    if (!graphCyRef.current) {
+      graphCyRef.current = cytoscape({
+        container: graphCanvasRef.current,
+        style: [
+          {
+            selector: "node",
+            style: {
+              "background-color": "#0f766e",
+              label: "data(label)",
+              color: "#1f2937",
+              "font-size": "10px",
+              "text-valign": "bottom",
+              "text-wrap": "wrap",
+              "text-max-width": "120px",
+            },
+          },
+          {
+            selector: "edge",
+            style: {
+              width: 1.5,
+              "line-color": "#94a3b8",
+              "target-arrow-color": "#94a3b8",
+              "target-arrow-shape": "triangle",
+              "curve-style": "bezier",
+              label: "data(relation)",
+              "font-size": "8px",
+              color: "#64748b",
+            },
+          },
+          {
+            selector: "node[type = 'keyword']",
+            style: { "background-color": "#2563eb" },
+          },
+          {
+            selector: "node[type = 'concept']",
+            style: { "background-color": "#7c3aed" },
+          },
+        ],
+        layout: { name: "cose", animate: true, fit: true },
+      });
+    }
+
+    const cy = graphCyRef.current;
+    cy.elements().remove();
+    cy.add(graphElements);
+    cy.layout({ name: "cose", animate: true, fit: true }).run();
+  }, [graphElements, graphModalOpen]);
+
+  useEffect(
+    () => () => {
+      if (graphCyRef.current) {
+        graphCyRef.current.destroy();
+        graphCyRef.current = null;
+      }
+    },
+    [],
+  );
+
+  const openGraphModal = (kbName: string) => {
+    setGraphKbName(kbName);
+    setGraphQuery("");
+    setGraphHops(2);
+    setGraphLimit(120);
+    setGraphError("");
+    setGraphData({ nodes: [], edges: [], truncated: false });
+    setGraphModalOpen(true);
+  };
+
+  const runGraphQuery = async () => {
+    if (!graphQuery.trim()) {
+      setGraphError(t("Please input a query"));
+      return;
+    }
+    setGraphError("");
+    setGraphLoading(true);
+    try {
+      const res = await fetch(
+        apiUrl(
+          `/api/v1/graph/subgraph?kb_name=${encodeURIComponent(graphKbName)}&q=${encodeURIComponent(graphQuery)}&hops=${graphHops}&limit=${graphLimit}`,
+        ),
+        {
+          headers: {
+            Authorization: `Bearer ${getAccessToken() ?? ""}`,
+          },
+        },
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = (await res.json()) as GraphPayload;
+      setGraphData({
+        nodes: json.nodes || [],
+        edges: json.edges || [],
+        truncated: Boolean(json.truncated),
+      });
+    } catch (e) {
+      setGraphError(`${t("Graph query failed")}: ${String(e)}`);
+      setGraphData({ nodes: [], edges: [], truncated: false });
+    } finally {
+      setGraphLoading(false);
+    }
+  };
+
   return (
     <div className="animate-fade-in h-screen overflow-y-auto p-6">
       {/* Header */}
@@ -1092,6 +1249,23 @@ export default function KnowledgePage() {
                       <Star className="w-4 h-4" />
                     </button>
                   )}
+                  <button
+                    onClick={() => openGraphModal(kb.name)}
+                    className={`p-2 rounded-lg transition-colors ${
+                      kb.statistics.rag_provider === "lightrag" ||
+                      kb.statistics.rag_provider === "raganything"
+                        ? "hover:bg-indigo-100 dark:hover:bg-indigo-900/40 text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400"
+                        : "cursor-not-allowed text-slate-300 dark:text-slate-600"
+                    }`}
+                    title={t("View Knowledge Graph")}
+                    disabled={
+                      !["lightrag", "raganything"].includes(
+                        kb.statistics.rag_provider || "",
+                      )
+                    }
+                  >
+                    <Network className="w-4 h-4" />
+                  </button>
                   <button
                     onClick={() => {
                       setTargetKb(kb.name);
@@ -1747,6 +1921,72 @@ export default function KnowledgePage() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {graphModalOpen && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-5xl h-[82vh] p-5 animate-in zoom-in-95 flex flex-col gap-4">
+            <div className="flex justify-between items-center">
+              <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">
+                {t("Knowledge Graph")} ·{" "}
+                <span className="text-indigo-600 dark:text-indigo-400">
+                  {graphKbName}
+                </span>
+              </h3>
+              <button
+                onClick={() => setGraphModalOpen(false)}
+                className="text-slate-400 dark:text-slate-500 hover:text-slate-600 dark:hover:text-slate-300"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
+              <input
+                value={graphQuery}
+                onChange={(e) => setGraphQuery(e.target.value)}
+                className="md:col-span-3 px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-transparent"
+                placeholder={t("Search graph anchor...")}
+              />
+              <input
+                type="number"
+                min={1}
+                max={3}
+                value={graphHops}
+                onChange={(e) => setGraphHops(Number(e.target.value))}
+                className="md:col-span-1 px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-transparent"
+              />
+              <input
+                type="number"
+                min={1}
+                max={300}
+                value={graphLimit}
+                onChange={(e) => setGraphLimit(Number(e.target.value))}
+                className="md:col-span-1 px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-transparent"
+              />
+              <button
+                onClick={runGraphQuery}
+                disabled={graphLoading}
+                className="md:col-span-1 px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-60"
+              >
+                {graphLoading ? t("Loading...") : t("Run Graph Query")}
+              </button>
+            </div>
+
+            {graphError && <p className="text-sm text-red-500">{graphError}</p>}
+            {graphData.truncated && (
+              <p className="text-sm text-amber-600">
+                {t(
+                  "Result truncated. Narrow query or lower limit for precise exploration.",
+                )}
+              </p>
+            )}
+
+            <div className="flex-1 min-h-0 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
+              <div className="h-full" ref={graphCanvasRef} />
+            </div>
           </div>
         </div>
       )}
