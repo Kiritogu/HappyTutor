@@ -679,6 +679,7 @@ async def websocket_progress(websocket: WebSocket, kb_name: str):
         initial_progress = progress_tracker.get_progress()
 
         # Check if KB is ready from persisted status (no local rag_storage dependency).
+        manager = get_kb_manager()
         kb_info = manager.get_kb_info(kb_name)
         kb_is_ready = bool(kb_info.get("status") == "ready")
 
