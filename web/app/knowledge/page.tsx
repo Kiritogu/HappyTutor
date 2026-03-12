@@ -1196,7 +1196,14 @@ export default function KnowledgePage() {
           },
         },
       );
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) {
+        if (res.status === 404) {
+          throw new Error(
+            "Backend does not support /api/v1/graph/overview yet. Please update and restart backend.",
+          );
+        }
+        throw new Error(`HTTP ${res.status}`);
+      }
       const json = (await res.json()) as GraphPayload;
       setGraphData({
         nodes: json.nodes || [],
