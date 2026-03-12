@@ -1,5 +1,5 @@
 system:
-  language: en
+  language: zh
 storage:
   backend: postgres
   postgres_dsn: ""

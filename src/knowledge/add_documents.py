@@ -28,6 +28,7 @@ from dotenv import load_dotenv
 
 from src.knowledge.extract_numbered_items import process_content_list
 from src.logging import LightRAGLogContext, get_logger
+from src.services.config import load_config_with_main, parse_language
 from src.services.llm import get_llm_config
 
 # Load LLM config early to ensure OPENAI_API_KEY env var is set before LightRAG imports
@@ -334,6 +335,12 @@ class DocumentAdder:
             max_token_size=embedding_cfg.max_tokens,
             func=unified_embed_func,
         )
+        cfg = load_config_with_main()
+        language = (
+            "Simplified Chinese"
+            if parse_language(cfg.get("system", {}).get("language", "zh")) == "zh"
+            else "English"
+        )
 
         # Create LightRAG instance (text-only, no raganything)
         with LightRAGLogContext(scene="knowledge_incremental"):
@@ -341,6 +348,7 @@ class DocumentAdder:
                 working_dir=str(self.rag_storage_dir),
                 llm_model_func=llm_model_func,
                 embedding_func=embedding_func,
+                addon_params={"language": language},
             )
             await rag.initialize_storages()
 
@@ -488,6 +496,12 @@ class DocumentAdder:
             max_token_size=embedding_cfg.max_tokens,
             func=unified_embed_func,
         )
+        cfg = load_config_with_main()
+        language = (
+            "Simplified Chinese"
+            if parse_language(cfg.get("system", {}).get("language", "zh")) == "zh"
+            else "English"
+        )
 
         # Configure RAGAnything with the appropriate parser
         config = RAGAnythingConfig(
@@ -496,6 +510,7 @@ class DocumentAdder:
             enable_image_processing=True,
             enable_table_processing=True,
             enable_equation_processing=True,
+            addon_params={"language": language},
         )
 
         with LightRAGLogContext(scene="knowledge_incremental"):

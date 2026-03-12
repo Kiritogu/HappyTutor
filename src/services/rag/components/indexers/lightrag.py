@@ -10,6 +10,8 @@ from pathlib import Path
 import sys
 from typing import Dict, List, Optional
 
+from src.services.config import load_config_with_main, parse_language
+
 from ...types import Document
 from ..base import BaseComponent
 
@@ -67,10 +69,17 @@ class LightRAGIndexer(BaseComponent):
             llm_model_func = llm_client.get_model_func()
 
             # Create pure LightRAG instance (no multimodal)
+            cfg = load_config_with_main()
+            language = (
+                "Simplified Chinese"
+                if parse_language(cfg.get("system", {}).get("language", "zh")) == "zh"
+                else "English"
+            )
             rag = LightRAG(
                 working_dir=working_dir,
                 llm_model_func=llm_model_func,
                 embedding_func=embed_client.get_embedding_func(),  # Use proper EmbeddingFunc object
+                addon_params={"language": language},
             )
 
             self._instances[working_dir] = rag

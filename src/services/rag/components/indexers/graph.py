@@ -10,6 +10,8 @@ from pathlib import Path
 import sys
 from typing import Dict, List, Optional
 
+from src.services.config import load_config_with_main, parse_language
+
 from ...types import Document
 from ..base import BaseComponent
 
@@ -64,12 +66,19 @@ class GraphIndexer(BaseComponent):
             # Get model function from unified LLM client
             # This handles all provider differences and env var setup for LightRAG
             llm_model_func = llm_client.get_model_func()
+            cfg = load_config_with_main()
+            language = (
+                "Simplified Chinese"
+                if parse_language(cfg.get("system", {}).get("language", "zh")) == "zh"
+                else "English"
+            )
 
             config = RAGAnythingConfig(
                 working_dir=working_dir,
                 enable_image_processing=True,
                 enable_table_processing=True,
                 enable_equation_processing=True,
+                addon_params={"language": language},
             )
 
             rag = RAGAnything(

@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional
 
 from src.logging import get_logger
 from src.logging.adapters import LightRAGLogContext
+from src.services.config import load_config_with_main, parse_language
 
 # Load LLM config early to ensure OPENAI_API_KEY env var is set before LightRAG imports
 # This is critical because LightRAG reads os.environ["OPENAI_API_KEY"] directly
@@ -87,12 +88,19 @@ class RAGAnythingPipeline:
         # These handle all provider differences (OpenAI, Anthropic, Azure, local, etc.)
         llm_model_func = llm_client.get_model_func()
         vision_model_func = llm_client.get_vision_model_func()
+        cfg = load_config_with_main()
+        language = (
+            "Simplified Chinese"
+            if parse_language(cfg.get("system", {}).get("language", "zh")) == "zh"
+            else "English"
+        )
 
         config = RAGAnythingConfig(
             working_dir=working_dir,
             enable_image_processing=self.enable_image,
             enable_table_processing=self.enable_table,
             enable_equation_processing=self.enable_equation,
+            addon_params={"language": language},
         )
 
         rag = RAGAnything(
