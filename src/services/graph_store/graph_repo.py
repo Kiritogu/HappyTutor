@@ -144,7 +144,12 @@ class Neo4jGraphRepository:
         UNWIND top_nodes AS src
         OPTIONAL MATCH (src)-[r:REL]-(dst:Entity {kb_name: $kb_name})
         WHERE dst IN top_nodes
-        WITH top_nodes, collect(DISTINCT r) AS rels
+        WITH top_nodes, collect(DISTINCT {
+            source: startNode(r).entity_id,
+            target: endNode(r).entity_id,
+            relation: coalesce(r.type, 'REL'),
+            weight: coalesce(r.weight, 1.0)
+        }) AS rels
         RETURN top_nodes AS nodes,
                rels[0..$edge_limit] AS rels,
                size(rels) > $edge_limit AS truncated
@@ -176,12 +181,31 @@ class Neo4jGraphRepository:
         for r in raw_rels:
             if not r:
                 continue
+            if isinstance(r, dict):
+                source = str(r.get("source") or "")
+                target = str(r.get("target") or "")
+                relation = str(r.get("relation") or "REL")
+                weight = float(r.get("weight") or 1.0)
+            elif isinstance(r, (tuple, list)) and len(r) >= 2:
+                source = str(r[0] or "")
+                target = str(r[1] or "")
+                relation = str(r[2] or "REL") if len(r) > 2 else "REL"
+                weight = float(r[3] or 1.0) if len(r) > 3 else 1.0
+            else:
+                source = str(getattr(r, "start_node", {}).get("entity_id") or "")
+                target = str(getattr(r, "end_node", {}).get("entity_id") or "")
+                relation = str(r.get("type") or "REL")
+                weight = float(r.get("weight") or 1.0)
+
+            if not source or not target:
+                continue
+
             edges.append(
                 GraphEdge(
-                    source=str(r.start_node.get("entity_id") or ""),
-                    target=str(r.end_node.get("entity_id") or ""),
-                    relation=str(r.get("type") or "REL"),
-                    weight=float(r.get("weight") or 1.0),
+                    source=source,
+                    target=target,
+                    relation=relation,
+                    weight=weight,
                 )
             )
         return nodes, edges, bool(row.get("truncated"))

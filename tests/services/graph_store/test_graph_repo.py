@@ -64,3 +64,28 @@ def test_fetch_overview_subgraph_returns_nodes_edges():
     assert len(nodes) == 2
     assert len(edges) == 1
     assert truncated is False
+
+
+class TupleRelClient(StubClient):
+    def execute_read(self, cypher, parameters=None):
+        return [
+            {
+                "nodes": [
+                    {"entity_id": "e1", "name": "NodeA", "type": "concept", "kb_name": "kb"},
+                    {"entity_id": "e2", "name": "NodeB", "type": "concept", "kb_name": "kb"},
+                ],
+                "rels": [("e1", "e2", "RELATED_TO", 0.9)],
+                "truncated": False,
+            }
+        ]
+
+
+def test_fetch_overview_subgraph_supports_tuple_relationships():
+    repo = Neo4jGraphRepository(TupleRelClient())  # type: ignore[arg-type]
+    nodes, edges, truncated = repo.fetch_overview_subgraph(kb_name="kb", limit=120)
+    assert len(nodes) == 2
+    assert len(edges) == 1
+    assert edges[0].source == "e1"
+    assert edges[0].target == "e2"
+    assert edges[0].relation == "RELATED_TO"
+    assert truncated is False
