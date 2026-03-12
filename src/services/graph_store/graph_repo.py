@@ -127,3 +127,61 @@ class Neo4jGraphRepository:
         ]
         return nodes, edges, bool(row.get("truncated"))
 
+    def fetch_overview_subgraph(
+        self,
+        *,
+        kb_name: str,
+        limit: int = 120,
+    ) -> tuple[list[GraphNode], list[GraphEdge], bool]:
+        normalized_limit = max(10, min(limit, 300))
+        cypher = """
+        MATCH (n:Entity {kb_name: $kb_name})
+        OPTIONAL MATCH (n)-[r:REL]-(:Entity {kb_name: $kb_name})
+        WITH n, count(r) AS degree
+        ORDER BY degree DESC, n.name ASC
+        LIMIT $limit
+        WITH collect(n) AS top_nodes
+        UNWIND top_nodes AS src
+        OPTIONAL MATCH (src)-[r:REL]-(dst:Entity {kb_name: $kb_name})
+        WHERE dst IN top_nodes
+        WITH top_nodes, collect(DISTINCT r) AS rels
+        RETURN top_nodes AS nodes,
+               rels[0..$edge_limit] AS rels,
+               size(rels) > $edge_limit AS truncated
+        """
+        rows = self.client.execute_read(
+            cypher,
+            {
+                "kb_name": kb_name,
+                "limit": normalized_limit,
+                "edge_limit": min(1000, normalized_limit * 5),
+            },
+        )
+        if not rows:
+            return [], [], False
+
+        row = rows[0]
+        raw_nodes = row.get("nodes") or []
+        raw_rels = row.get("rels") or []
+        nodes = [
+            GraphNode(
+                id=str(n.get("entity_id") or ""),
+                label=str(n.get("name") or ""),
+                type=str(n.get("type") or "entity"),
+                metadata={"kb_name": n.get("kb_name", "")},
+            )
+            for n in raw_nodes
+        ]
+        edges: list[GraphEdge] = []
+        for r in raw_rels:
+            if not r:
+                continue
+            edges.append(
+                GraphEdge(
+                    source=str(r.start_node.get("entity_id") or ""),
+                    target=str(r.end_node.get("entity_id") or ""),
+                    relation=str(r.get("type") or "REL"),
+                    weight=float(r.get("weight") or 1.0),
+                )
+            )
+        return nodes, edges, bool(row.get("truncated"))

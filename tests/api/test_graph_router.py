@@ -77,6 +77,10 @@ def test_graph_router_contract(monkeypatch):
             assert s.status_code == 200
             assert "nodes" in s.json()
 
+            o = client.get("/api/v1/graph/overview", params={"kb_name": "kb", "limit": 80})
+            assert o.status_code == 200
+            assert "nodes" in o.json()
+
             r = client.post("/api/v1/graph/reindex", params={"kb_name": "kb", "provider": "lightrag"})
             assert r.status_code == 200
             assert r.json()["status"] == "accepted"

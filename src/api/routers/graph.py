@@ -63,6 +63,30 @@ async def get_subgraph(
         client.close()
 
 
+@router.get("/overview")
+async def get_overview_subgraph(
+    kb_name: str = Query(min_length=1),
+    limit: int = Query(default=120, ge=10, le=300),
+    current_user: dict = Depends(get_current_user_from_header),
+):
+    del current_user
+    settings = load_graph_store_settings(project_root=Path(__file__).resolve().parent.parent.parent.parent)
+    client = Neo4jClient(settings)
+    try:
+        client.connect()
+        repo = Neo4jGraphRepository(client)
+        nodes, edges, truncated = repo.fetch_overview_subgraph(kb_name=kb_name, limit=limit)
+        return {
+            "nodes": [n.__dict__ for n in nodes],
+            "edges": [e.__dict__ for e in edges],
+            "truncated": truncated,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Graph overview query failed: {e}")
+    finally:
+        client.close()
+
+
 @router.post("/reindex")
 async def reindex_graph(
     kb_name: str = Query(min_length=1),
@@ -77,4 +101,3 @@ async def reindex_graph(
         "kb_name": kb_name,
         "provider": provider,
     }
-

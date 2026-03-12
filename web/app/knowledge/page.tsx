@@ -98,6 +98,9 @@ type GraphNode = {
   label: string;
   type: string;
   score?: number;
+  metadata?: {
+    kb_name?: string;
+  };
 };
 
 type GraphEdge = {
@@ -144,6 +147,13 @@ export default function KnowledgePage() {
     edges: [],
     truncated: false,
   });
+  const [graphNodeTypeFilter, setGraphNodeTypeFilter] = useState("all");
+  const [graphRelationFilter, setGraphRelationFilter] = useState("all");
+  const [graphKeywordFilter, setGraphKeywordFilter] = useState("");
+  const [graphMinDegree, setGraphMinDegree] = useState(0);
+  const [selectedGraphNodeId, setSelectedGraphNodeId] = useState<string | null>(
+    null,
+  );
   const graphCanvasRef = useRef<HTMLDivElement | null>(null);
   const graphCyRef = useRef<Core | null>(null);
 
@@ -153,11 +163,77 @@ export default function KnowledgePage() {
     type: "success" | "error" | "info";
   } | null>(null);
 
+  const graphDegreeMap = useMemo(() => {
+    const degree = new Map<string, number>();
+    for (const node of graphData.nodes) degree.set(node.id, 0);
+    for (const edge of graphData.edges) {
+      degree.set(edge.source, (degree.get(edge.source) || 0) + 1);
+      degree.set(edge.target, (degree.get(edge.target) || 0) + 1);
+    }
+    return degree;
+  }, [graphData.edges, graphData.nodes]);
+
+  const availableGraphNodeTypes = useMemo(
+    () =>
+      Array.from(
+        new Set(graphData.nodes.map((n) => n.type).filter(Boolean)),
+      ).sort(),
+    [graphData.nodes],
+  );
+
+  const availableGraphRelations = useMemo(
+    () =>
+      Array.from(
+        new Set(graphData.edges.map((e) => e.relation).filter(Boolean)),
+      ).sort(),
+    [graphData.edges],
+  );
+
+  const filteredGraphData = useMemo(() => {
+    const keyword = graphKeywordFilter.trim().toLowerCase();
+    const relationFilter = graphRelationFilter;
+
+    const candidateEdges =
+      relationFilter === "all"
+        ? graphData.edges
+        : graphData.edges.filter((e) => e.relation === relationFilter);
+
+    const connectedIds = new Set<string>();
+    for (const edge of candidateEdges) {
+      connectedIds.add(edge.source);
+      connectedIds.add(edge.target);
+    }
+
+    const nodes = graphData.nodes.filter((node) => {
+      if (graphNodeTypeFilter !== "all" && node.type !== graphNodeTypeFilter)
+        return false;
+      if (keyword && !node.label.toLowerCase().includes(keyword)) return false;
+      if ((graphDegreeMap.get(node.id) || 0) < graphMinDegree) return false;
+      if (candidateEdges.length > 0 && !connectedIds.has(node.id)) return false;
+      return true;
+    });
+
+    const kept = new Set(nodes.map((n) => n.id));
+    const edges = candidateEdges.filter(
+      (e) => kept.has(e.source) && kept.has(e.target),
+    );
+    return { nodes, edges };
+  }, [
+    graphData.edges,
+    graphData.nodes,
+    graphDegreeMap,
+    graphKeywordFilter,
+    graphMinDegree,
+    graphNodeTypeFilter,
+    graphRelationFilter,
+  ]);
+
   const graphElements = useMemo<ElementDefinition[]>(() => {
-    const nodes = graphData.nodes.map((n) => ({
+    const nodes = filteredGraphData.nodes.map((n) => ({
       data: { id: n.id, label: n.label, type: n.type, score: n.score ?? 0 },
+      classes: n.id === selectedGraphNodeId ? "selected-node" : "",
     }));
-    const edges = graphData.edges.map((e, idx) => ({
+    const edges = filteredGraphData.edges.map((e, idx) => ({
       data: {
         id: `${e.source}-${e.target}-${idx}`,
         source: e.source,
@@ -167,7 +243,23 @@ export default function KnowledgePage() {
       },
     }));
     return [...nodes, ...edges];
-  }, [graphData.edges, graphData.nodes]);
+  }, [filteredGraphData.edges, filteredGraphData.nodes, selectedGraphNodeId]);
+
+  const selectedGraphNode = useMemo(
+    () => graphData.nodes.find((n) => n.id === selectedGraphNodeId) || null,
+    [graphData.nodes, selectedGraphNodeId],
+  );
+
+  const selectedGraphNodeEdges = useMemo(
+    () =>
+      selectedGraphNodeId
+        ? graphData.edges.filter(
+            (e) =>
+              e.source === selectedGraphNodeId || e.target === selectedGraphNodeId,
+          )
+        : [],
+    [graphData.edges, selectedGraphNodeId],
+  );
 
   // Helper function to generate unique ID
   const generateFileId = () => Math.random().toString(36).substring(2, 15);
@@ -1048,16 +1140,37 @@ export default function KnowledgePage() {
             selector: "node[type = 'concept']",
             style: { "background-color": "#7c3aed" },
           },
+          {
+            selector: ".selected-node",
+            style: {
+              "border-width": 3,
+              "border-color": "#f59e0b",
+            },
+          },
         ],
         layout: { name: "cose", animate: true, fit: true },
+      });
+      graphCyRef.current.on("tap", "node", (evt) => {
+        const nodeId = String(evt.target.data("id") || "");
+        if (nodeId) setSelectedGraphNodeId(nodeId);
       });
     }
 
     const cy = graphCyRef.current;
     cy.elements().remove();
     cy.add(graphElements);
-    cy.layout({ name: "cose", animate: true, fit: true }).run();
+    cy.layout({ name: "cose", animate: true, fit: true, padding: 24 }).run();
   }, [graphElements, graphModalOpen]);
+
+  useEffect(() => {
+    const cy = graphCyRef.current;
+    if (!cy || !selectedGraphNodeId) return;
+    const node = cy.getElementById(selectedGraphNodeId);
+    if (!node || node.empty()) return;
+    cy.elements().removeClass("selected-node");
+    node.addClass("selected-node");
+    cy.animate({ fit: { eles: node, padding: 120 }, duration: 250 });
+  }, [selectedGraphNodeId]);
 
   useEffect(
     () => () => {
@@ -1069,14 +1182,51 @@ export default function KnowledgePage() {
     [],
   );
 
-  const openGraphModal = (kbName: string) => {
+  const loadGraphOverview = async (kbName: string, limit = 120) => {
+    setGraphError("");
+    setGraphLoading(true);
+    try {
+      const res = await fetch(
+        apiUrl(
+          `/api/v1/graph/overview?kb_name=${encodeURIComponent(kbName)}&limit=${limit}`,
+        ),
+        {
+          headers: {
+            Authorization: `Bearer ${getAccessToken() ?? ""}`,
+          },
+        },
+      );
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = (await res.json()) as GraphPayload;
+      setGraphData({
+        nodes: json.nodes || [],
+        edges: json.edges || [],
+        truncated: Boolean(json.truncated),
+      });
+      setSelectedGraphNodeId((json.nodes || [])[0]?.id || null);
+    } catch (e) {
+      setGraphError(`${t("Graph query failed")}: ${String(e)}`);
+      setGraphData({ nodes: [], edges: [], truncated: false });
+      setSelectedGraphNodeId(null);
+    } finally {
+      setGraphLoading(false);
+    }
+  };
+
+  const openGraphModal = async (kbName: string) => {
     setGraphKbName(kbName);
     setGraphQuery("");
     setGraphHops(2);
     setGraphLimit(120);
+    setGraphNodeTypeFilter("all");
+    setGraphRelationFilter("all");
+    setGraphKeywordFilter("");
+    setGraphMinDegree(0);
     setGraphError("");
     setGraphData({ nodes: [], edges: [], truncated: false });
+    setSelectedGraphNodeId(null);
     setGraphModalOpen(true);
+    await loadGraphOverview(kbName, 120);
   };
 
   const runGraphQuery = async () => {
@@ -1104,9 +1254,11 @@ export default function KnowledgePage() {
         edges: json.edges || [],
         truncated: Boolean(json.truncated),
       });
+      setSelectedGraphNodeId((json.nodes || [])[0]?.id || null);
     } catch (e) {
       setGraphError(`${t("Graph query failed")}: ${String(e)}`);
       setGraphData({ nodes: [], edges: [], truncated: false });
+      setSelectedGraphNodeId(null);
     } finally {
       setGraphLoading(false);
     }
@@ -1218,7 +1370,7 @@ export default function KnowledgePage() {
                     </div>
                   </div>
                 </div>
-                <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="flex gap-1 opacity-100">
                   {!kb.is_default && (
                     <button
                       onClick={async () => {
@@ -1927,7 +2079,7 @@ export default function KnowledgePage() {
 
       {graphModalOpen && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-5xl h-[82vh] p-5 animate-in zoom-in-95 flex flex-col gap-4">
+          <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-2xl w-full max-w-6xl h-[86vh] p-4 animate-in zoom-in-95 flex flex-col gap-3">
             <div className="flex justify-between items-center">
               <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">
                 {t("Knowledge Graph")} ·{" "}
@@ -1943,36 +2095,150 @@ export default function KnowledgePage() {
               </button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
-              <input
-                value={graphQuery}
-                onChange={(e) => setGraphQuery(e.target.value)}
-                className="md:col-span-3 px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-transparent"
-                placeholder={t("Search graph anchor...")}
-              />
-              <input
-                type="number"
-                min={1}
-                max={3}
-                value={graphHops}
-                onChange={(e) => setGraphHops(Number(e.target.value))}
-                className="md:col-span-1 px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-transparent"
-              />
-              <input
-                type="number"
-                min={1}
-                max={300}
-                value={graphLimit}
-                onChange={(e) => setGraphLimit(Number(e.target.value))}
-                className="md:col-span-1 px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-transparent"
-              />
-              <button
-                onClick={runGraphQuery}
-                disabled={graphLoading}
-                className="md:col-span-1 px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-60"
-              >
-                {graphLoading ? t("Loading...") : t("Run Graph Query")}
-              </button>
+            <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-3">
+              <div className="lg:col-span-4 xl:col-span-3 border border-slate-200 dark:border-slate-700 rounded-xl p-3 bg-slate-50/70 dark:bg-slate-900/50 overflow-y-auto space-y-3">
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">
+                    {t("Graph Query")}
+                  </p>
+                  <input
+                    value={graphQuery}
+                    onChange={(e) => setGraphQuery(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-transparent"
+                    placeholder={t("Search graph anchor...")}
+                  />
+                  <div className="grid grid-cols-2 gap-2">
+                    <input
+                      type="number"
+                      min={1}
+                      max={3}
+                      value={graphHops}
+                      onChange={(e) => setGraphHops(Number(e.target.value))}
+                      className="px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-transparent"
+                    />
+                    <input
+                      type="number"
+                      min={10}
+                      max={300}
+                      value={graphLimit}
+                      onChange={(e) => setGraphLimit(Number(e.target.value))}
+                      className="px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-transparent"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={runGraphQuery}
+                      disabled={graphLoading}
+                      className="px-3 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-60"
+                    >
+                      {graphLoading ? t("Loading...") : t("Run Graph Query")}
+                    </button>
+                    <button
+                      onClick={() => loadGraphOverview(graphKbName, graphLimit)}
+                      disabled={graphLoading}
+                      className="px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-60"
+                    >
+                      {t("Load Overview")}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">
+                    {t("Filters")}
+                  </p>
+                  <input
+                    value={graphKeywordFilter}
+                    onChange={(e) => setGraphKeywordFilter(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-transparent"
+                    placeholder={t("Filter nodes...")}
+                  />
+                  <select
+                    value={graphNodeTypeFilter}
+                    onChange={(e) => setGraphNodeTypeFilter(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-transparent"
+                  >
+                    <option value="all">{t("All node types")}</option>
+                    {availableGraphNodeTypes.map((tp) => (
+                      <option key={tp} value={tp}>
+                        {tp}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    value={graphRelationFilter}
+                    onChange={(e) => setGraphRelationFilter(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-600 bg-transparent"
+                  >
+                    <option value="all">{t("All relations")}</option>
+                    {availableGraphRelations.map((rel) => (
+                      <option key={rel} value={rel}>
+                        {rel}
+                      </option>
+                    ))}
+                  </select>
+                  <div>
+                    <label className="text-xs text-slate-500 dark:text-slate-400">
+                      {t("Min degree")} {graphMinDegree}
+                    </label>
+                    <input
+                      type="range"
+                      min={0}
+                      max={8}
+                      step={1}
+                      value={graphMinDegree}
+                      onChange={(e) => setGraphMinDegree(Number(e.target.value))}
+                      className="w-full"
+                    />
+                  </div>
+                </div>
+
+                <div className="text-xs text-slate-500 dark:text-slate-400 flex gap-3">
+                  <span>{t("Nodes")}: {filteredGraphData.nodes.length}</span>
+                  <span>{t("Edges")}: {filteredGraphData.edges.length}</span>
+                </div>
+
+                <div className="border border-slate-200 dark:border-slate-700 rounded-lg p-3 bg-white dark:bg-slate-800">
+                  <p className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide mb-2">
+                    {t("Node Details")}
+                  </p>
+                  {selectedGraphNode ? (
+                    <div className="space-y-1 text-sm">
+                      <div className="font-semibold text-slate-800 dark:text-slate-100 break-all">
+                        {selectedGraphNode.label}
+                      </div>
+                      <div className="text-slate-500 dark:text-slate-400">
+                        ID: {selectedGraphNode.id}
+                      </div>
+                      <div className="text-slate-500 dark:text-slate-400">
+                        Type: {selectedGraphNode.type}
+                      </div>
+                      <div className="text-slate-500 dark:text-slate-400">
+                        Degree: {graphDegreeMap.get(selectedGraphNode.id) || 0}
+                      </div>
+                      <div className="text-slate-500 dark:text-slate-400">
+                        Connected edges: {selectedGraphNodeEdges.length}
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-slate-400 dark:text-slate-500">
+                      {t("Select a node to inspect details.")}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <div className="lg:col-span-8 xl:col-span-9 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden bg-slate-50 dark:bg-slate-900 relative">
+                <div className="absolute top-2 left-2 z-10 text-xs text-slate-500 dark:text-slate-400 bg-white/80 dark:bg-slate-800/80 rounded px-2 py-1 border border-slate-200 dark:border-slate-700">
+                  {t("Tip")}: {t("Click node to focus and inspect details")}
+                </div>
+                {filteredGraphData.nodes.length === 0 && !graphLoading && (
+                  <div className="absolute inset-0 flex items-center justify-center text-slate-400 dark:text-slate-500 text-sm">
+                    {t("No graph data to display. Try Load Overview or adjust filters.")}
+                  </div>
+                )}
+                <div className="h-full min-h-[420px]" ref={graphCanvasRef} />
+              </div>
             </div>
 
             {graphError && <p className="text-sm text-red-500">{graphError}</p>}
@@ -1983,10 +2249,6 @@ export default function KnowledgePage() {
                 )}
               </p>
             )}
-
-            <div className="flex-1 min-h-0 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
-              <div className="h-full" ref={graphCanvasRef} />
-            </div>
           </div>
         </div>
       )}

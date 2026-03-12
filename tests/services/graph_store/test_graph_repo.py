@@ -57,3 +57,10 @@ def test_fetch_subgraph_returns_nodes_edges():
     assert len(edges) == 1
     assert truncated is False
 
+
+def test_fetch_overview_subgraph_returns_nodes_edges():
+    repo = Neo4jGraphRepository(StubClient())  # type: ignore[arg-type]
+    nodes, edges, truncated = repo.fetch_overview_subgraph(kb_name="kb", limit=120)
+    assert len(nodes) == 2
+    assert len(edges) == 1
+    assert truncated is False

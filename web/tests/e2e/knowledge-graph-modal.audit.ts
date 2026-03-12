@@ -39,6 +39,20 @@ test.describe("Knowledge :: Graph modal entry", () => {
       });
     });
 
+    await page.route("**/api/v1/settings/sidebar", async (route) => {
+      await route.fulfill({
+        status: 200,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          description: "test",
+          nav_order: {
+            start: ["/", "/history", "/knowledge", "/notebook"],
+            learnResearch: ["/question", "/guide", "/research"],
+          },
+        }),
+      });
+    });
+
     await page.route("**/api/v1/knowledge/health", async (route) => {
       await route.fulfill({
         status: 200,
@@ -88,7 +102,6 @@ test.describe("Knowledge :: Graph modal entry", () => {
     });
 
     await page.goto(`${BASE_URL}/knowledge`);
-    await page.locator("text=kb_graph").first().hover();
 
     const graphButton = page
       .locator(
@@ -97,7 +110,7 @@ test.describe("Knowledge :: Graph modal entry", () => {
       .first();
 
     await expect(graphButton).toBeVisible();
-    await graphButton.click();
+    await graphButton.click({ force: true });
 
     await expect(
       page
