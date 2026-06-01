@@ -29,7 +29,7 @@ urllib3==2.6.3
 # Async support
 # ============================================
 nest-asyncio==1.6.0
-tenacity==8.5.0
+tenacity==9.1.4
 
 # ============================================
 # Web framework and server
