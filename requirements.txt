@@ -86,7 +86,7 @@ langchain-core==0.3.83         # Core LangChain abstractions
 langchain-openai==0.3.0        # OpenAI integration (ChatOpenAI)
 langchain-anthropic==0.3.22    # Anthropic integration (ChatAnthropic)
 langchain-community==0.3.31    # Community integrations
-langchain-ollama==0.3.10       # Ollama integration (ChatOllama)
+langchain-ollama==1.0.1       # Ollama integration (ChatOllama)
 
 # ============================================
 # LangGraph (workflow orchestration)
